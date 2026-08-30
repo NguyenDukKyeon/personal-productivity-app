@@ -1,10 +1,12 @@
 import type { IDBPDatabase } from 'idb';
 import { z } from 'zod';
+import { validateCapacityMinutes } from '@/domain/capacity/capacity';
 import type { DailyCommitmentSnapshot } from '@/domain/commitments/commitment';
 import type { DailyPlan, DailyPriority } from '@/domain/daily-plans/daily-plan';
+import { parseLocalDateKey } from '@/domain/shared/local-date';
 import { err, ok, type Result } from '@/domain/shared/result';
-import type { TimeBlock } from '@/domain/time-blocks/time-block';
-import type { WorkItem } from '@/domain/work-items/work-item';
+import { validateTimeBlock, type TimeBlock } from '@/domain/time-blocks/time-block';
+import { validateWorkItem, type WorkItem } from '@/domain/work-items/work-item';
 import type { TodayRepository } from '@/infrastructure/persistence/contracts/today-repository';
 import { openGuestTodayDb, type GuestTodayDB } from './guest-db';
 
@@ -74,18 +76,75 @@ const commitmentSchema = z.object({
   ),
 });
 
-function parseRecord<T>(schema: z.ZodType<T>, value: unknown): Result<T> {
+function invalidDate(): Result<never> {
+  return err('invalid_date', 'Date must be a valid YYYY-MM-DD calendar date.');
+}
+
+function validateStoredDate(date: string): Result<void> {
+  return parseLocalDateKey(date) ? ok(undefined) : invalidDate();
+}
+
+function validateStoredWorkItem(item: WorkItem): Result<void> {
+  return validateWorkItem(item);
+}
+
+function validateStoredDailyPlan(plan: DailyPlan): Result<void> {
+  const date = validateStoredDate(plan.date);
+  if (!date.ok) return date;
+  const capacity = validateCapacityMinutes(plan.capacityMinutes);
+  if (!capacity.ok) return capacity;
+  return ok(undefined);
+}
+
+function validateStoredTimeBlock(block: TimeBlock): Result<void> {
+  const date = validateStoredDate(block.date);
+  if (!date.ok) return date;
+  return validateTimeBlock(block);
+}
+
+function validateStoredCommitment(snapshot: DailyCommitmentSnapshot): Result<void> {
+  const date = validateStoredDate(snapshot.date);
+  if (!date.ok) return date;
+  const capacity = validateCapacityMinutes(snapshot.capacityMinutes);
+  if (!capacity.ok) return capacity;
+  for (const block of snapshot.timeBlocks) {
+    const bounds = validateTimeBlock({
+      workItemId: block.workItemId ?? 'commitment-block',
+      habitId: null,
+      startMinute: block.startMinute,
+      endMinute: block.endMinute,
+    });
+    if (!bounds.ok) return bounds;
+  }
+  return ok(undefined);
+}
+
+function parseRecord<T>(
+  schema: z.ZodType<T>,
+  value: unknown,
+  validate?: (record: T) => Result<unknown>,
+): Result<T> {
   const parsed = schema.safeParse(value);
   if (!parsed.success) {
     return err('corrupt_record', CORRUPT_RECORD_MESSAGE);
   }
+  if (validate) {
+    const semantic = validate(parsed.data);
+    if (!semantic.ok) {
+      return err('corrupt_record', CORRUPT_RECORD_MESSAGE);
+    }
+  }
   return ok(parsed.data);
 }
 
-function parseRecords<T>(schema: z.ZodType<T>, values: unknown[]): Result<T[]> {
+function parseRecords<T>(
+  schema: z.ZodType<T>,
+  values: unknown[],
+  validate?: (record: T) => Result<unknown>,
+): Result<T[]> {
   const records: T[] = [];
   for (const value of values) {
-    const parsed = parseRecord(schema, value);
+    const parsed = parseRecord(schema, value, validate);
     if (!parsed.ok) return parsed;
     records.push(parsed.value);
   }
@@ -121,7 +180,7 @@ class GuestTodayRepository implements TodayRepository {
 
   async listWorkItems(): Promise<Result<WorkItem[]>> {
     try {
-      return parseRecords(workItemSchema, await this.db.getAll('workItems'));
+      return parseRecords(workItemSchema, await this.db.getAll('workItems'), validateStoredWorkItem);
     } catch {
       return readFailed();
     }
@@ -131,7 +190,7 @@ class GuestTodayRepository implements TodayRepository {
     try {
       const row = await this.db.get('workItems', id);
       if (row === undefined) return ok(null);
-      return parseRecord(workItemSchema, row);
+      return parseRecord(workItemSchema, row, validateStoredWorkItem);
     } catch {
       return readFailed();
     }
@@ -150,7 +209,7 @@ class GuestTodayRepository implements TodayRepository {
     try {
       const row = await this.db.getFromIndex('dailyPlans', 'date', date);
       if (row === undefined) return ok(null);
-      return parseRecord(dailyPlanSchema, row);
+      return parseRecord(dailyPlanSchema, row, validateStoredDailyPlan);
     } catch {
       return readFailed();
     }
@@ -201,7 +260,11 @@ class GuestTodayRepository implements TodayRepository {
 
   async listTimeBlocks(date: string): Promise<Result<TimeBlock[]>> {
     try {
-      return parseRecords(timeBlockSchema, await this.db.getAllFromIndex('timeBlocks', 'date', date));
+      return parseRecords(
+        timeBlockSchema,
+        await this.db.getAllFromIndex('timeBlocks', 'date', date),
+        validateStoredTimeBlock,
+      );
     } catch {
       return readFailed();
     }
@@ -211,7 +274,7 @@ class GuestTodayRepository implements TodayRepository {
     try {
       const row = await this.db.get('timeBlocks', id);
       if (row === undefined) return ok(null);
-      return parseRecord(timeBlockSchema, row);
+      return parseRecord(timeBlockSchema, row, validateStoredTimeBlock);
     } catch {
       return readFailed();
     }
@@ -222,6 +285,7 @@ class GuestTodayRepository implements TodayRepository {
       return parseRecords(
         timeBlockSchema,
         await this.db.getAllFromIndex('timeBlocks', 'workItemId', workItemId),
+        validateStoredTimeBlock,
       );
     } catch {
       return readFailed();
@@ -250,7 +314,7 @@ class GuestTodayRepository implements TodayRepository {
     try {
       const row = await this.db.getFromIndex('dailyCommitments', 'date', date);
       if (row === undefined) return ok(null);
-      return parseRecord(commitmentSchema, row);
+      return parseRecord(commitmentSchema, row, validateStoredCommitment);
     } catch {
       return readFailed();
     }

@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { completeWorkItem, reopenWorkItem, type WorkItem } from './work-item';
+import { completeWorkItem, reopenWorkItem, validateWorkItem, type WorkItem } from './work-item';
 
 const item: WorkItem = {
   id: 'w1',
@@ -29,4 +29,12 @@ it('reopens to scheduled only when scheduling evidence exists', () => {
   expect(reopenWorkItem(completed, false, '2026-08-30T10:00:00.000Z').status).toBe('backlog');
   expect(reopenWorkItem(completed, true, '2026-08-30T10:00:00.000Z').status).toBe('scheduled');
   expect(reopenWorkItem(completed, true, '2026-08-30T10:00:00.000Z').completedAt).toBeNull();
+});
+
+it('rejects blank titles and invalid minute fields', () => {
+  expect(validateWorkItem({ title: 'Algebra', estimatedMinutes: 60, actualMinutes: 0 }).ok).toBe(true);
+  expect(validateWorkItem({ title: '   ', estimatedMinutes: 60, actualMinutes: 0 }).ok).toBe(false);
+  expect(validateWorkItem({ title: 'Algebra', estimatedMinutes: 0, actualMinutes: 0 }).ok).toBe(false);
+  expect(validateWorkItem({ title: 'Algebra', estimatedMinutes: 45.5, actualMinutes: 0 }).ok).toBe(false);
+  expect(validateWorkItem({ title: 'Algebra', estimatedMinutes: 60, actualMinutes: -1 }).ok).toBe(false);
 });
