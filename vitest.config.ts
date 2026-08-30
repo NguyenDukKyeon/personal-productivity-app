@@ -2,9 +2,16 @@ import { defineConfig } from 'vitest/config';
 import path from 'path';
 
 export default defineConfig({
+  oxc: {
+    jsx: {
+      runtime: 'automatic',
+    },
+  },
   test: {
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
-    environment: 'node',
+    environment: 'jsdom',
+    setupFiles: ['src/test/setup.ts'],
+    clearMocks: true,
   },
   resolve: {
     alias: {
