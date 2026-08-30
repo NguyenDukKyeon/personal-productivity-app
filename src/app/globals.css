@@ -1,0 +1,122 @@
+@import "tailwindcss";
+
+@variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  :root,
+  html:not(.dark),
+  html.light {
+    --background: #f8fafc;
+    --foreground: #0f172a;
+    --card: #ffffff;
+    --card-foreground: #0f172a;
+    --card-hover: #f1f5f9;
+    --popover: #ffffff;
+    --popover-foreground: #0f172a;
+    --primary: #4f46e5;
+    --primary-foreground: #ffffff;
+    --secondary: #f1f5f9;
+    --secondary-foreground: #1e293b;
+    --muted: #f1f5f9;
+    --muted-foreground: #64748b;
+    --accent: #e2e8f0;
+    --accent-foreground: #0f172a;
+    --destructive: #ef4444;
+    --destructive-foreground: #ffffff;
+    --border: #e2e8f0;
+    --border-subtle: #f1f5f9;
+    --input: #e2e8f0;
+    --ring: #4f46e5;
+    --sidebar: #ffffff;
+    --sidebar-border: #e2e8f0;
+    --radius: 0.875rem;
+    color-scheme: light;
+  }
+
+  .dark,
+  html.dark,
+  :root.dark {
+    --background: #090a0f;
+    --foreground: #f8fafc;
+    --card: #11141d;
+    --card-foreground: #f8fafc;
+    --card-hover: #181d2a;
+    --popover: #11141d;
+    --popover-foreground: #f8fafc;
+    --primary: #6366f1;
+    --primary-foreground: #ffffff;
+    --secondary: #161b26;
+    --secondary-foreground: #e2e8f0;
+    --muted: #161b26;
+    --muted-foreground: #94a3b8;
+    --accent: #1e2538;
+    --accent-foreground: #f8fafc;
+    --destructive: #ef4444;
+    --destructive-foreground: #ffffff;
+    --border: #1e2538;
+    --border-subtle: #161b26;
+    --input: #1e2538;
+    --ring: #6366f1;
+    --sidebar: #0d1017;
+    --sidebar-border: #1e2538;
+    color-scheme: dark;
+  }
+}
+
+html {
+  background-color: var(--background);
+  color: var(--foreground);
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', 'Segoe UI', Roboto, sans-serif;
+  overflow-x: hidden;
+  letter-spacing: -0.012em;
+}
+
+/* Tabular figures for timer and stats */
+.font-tabular {
+  font-feature-settings: "tnum" 1, "zero" 1;
+}
+
+/* Custom crisp scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: #252b3d;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #374151;
+}
+
+/* Tactile button feedback */
+.active-press:active {
+  transform: scale(0.98);
+}
+
+/* Subtle micro-grid background */
+.bg-subtle-grid {
+  background-size: 32px 32px;
+  background-image: 
+    linear-gradient(to right, rgba(226, 232, 240, 0.4) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(226, 232, 240, 0.4) 1px, transparent 1px);
+}
+.dark .bg-subtle-grid {
+  background-image: 
+    linear-gradient(to right, rgba(30, 37, 56, 0.4) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(30, 37, 56, 0.4) 1px, transparent 1px);
+}
