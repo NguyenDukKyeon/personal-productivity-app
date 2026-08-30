@@ -1,229 +1,624 @@
-# Personal Productivity OS — Foundation + Today Workstation Design
+# Personal Productivity OS — Smart Planner Reborn Design
 
 **Date:** 2026-08-30  
-**Status:** Proposed implementation design — approved architectural direction, pending written-spec review  
+**Status:** Design v2 — approved direction, pending final written-spec review  
 **Repository:** `NguyenDukKyeon/personal-productivity-app`  
-**Legacy source:** `NguyenDukKyeon/smart-planner`
+**Behavioral baseline:** `NguyenDukKyeon/smart-planner`
 
-## 1. Purpose
+## 1. Product thesis
 
-Build a clean successor to Smart Planner using **Clean Rebuild + Selective Port**.
+Build **Smart Planner Reborn** as a **Behavior-Preserving Rebuild + Discipline Upgrade**.
 
-The new product keeps valuable domain knowledge and regression lessons from the legacy application, but it does **not** copy the legacy UI/router/storage architecture wholesale. The first implementation slice is deliberately small enough to review and verify end-to-end:
+This is not a generic productivity app and not a visual rewrite of Smart Planner. The new product must preserve the behaviors that made Smart Planner useful while replacing implementation debt and adding a discipline system that improves the probability that a plan becomes real work.
 
-1. project foundation;
-2. domain contracts;
-3. guest persistence;
-4. Today Workstation;
-5. production quality gates.
+The core loop is:
 
-The slice must finish as working software, not as scaffolding for future features.
+```text
+PLAN
+  ↓
+COMMIT
+  ↓
+START
+  ↓
+FOCUS / EXECUTE
+  ↓
+RECORD REALITY
+  ↓
+RECOVER FROM MISSES
+  ↓
+REVIEW
+  ↓
+ADAPT THE NEXT PLAN
+```
 
-## 2. Product principle
+The product cannot guarantee human discipline. It can, however, guarantee that its design:
 
-The product follows **High Discipline, Low Friction**.
+- reduces friction to decide what to do next;
+- makes commitments explicit;
+- makes starting cues concrete;
+- records planned versus actual behavior;
+- prevents silent rollover and silent plan rewriting;
+- treats misses as diagnostic data rather than punishment;
+- creates recovery actions after repeated avoidance;
+- helps the user protect realistic work blocks;
+- gives weekly feedback based on observed behavior rather than motivational filler.
 
-The system optimizes for real execution data:
+## 2. Product principle: High Discipline, Low Friction
 
-- committed work;
-- actual work completed;
-- time capacity;
-- scheduled time;
-- deep-work evidence;
-- consistency over time.
+The product optimizes for **real execution**, not engagement with the app itself.
 
-It does **not** use XP, levels, shops, fake currency, loot, or other reward mechanics that can become substitutes for real progress.
+Primary evidence of progress:
 
-## 3. Scope of this design
+- planned minutes versus actual focused minutes;
+- commitment completion;
+- start reliability;
+- task carry-over;
+- focus-session completion;
+- interruption/distraction evidence;
+- habit consistency;
+- estimation accuracy;
+- recovery after misses;
+- progress against projects/roadmaps.
 
-### 3.1 In scope
+The product must not use XP, loot, virtual currency, shops, arbitrary levels, punishment streaks, or decorative gamification as substitutes for real progress.
 
-This spec covers the first vertical slice:
+A streak may be displayed only when it represents a meaningful repeated behavior and must never imply that one miss erases prior progress.
 
-- Next.js App Router foundation;
-- TypeScript strict mode;
-- Tailwind CSS v4;
-- shadcn/ui-compatible component foundation;
-- responsive application shell;
-- domain types and invariants for Projects, Work Items, Daily Plans, and Time Blocks;
-- repository interfaces independent of storage technology;
-- local guest persistence with versioned data;
-- safe load/write behavior for corrupt or unavailable browser persistence;
-- Today Workstation;
-- daily capacity from 0 to 16 hours;
-- Top 1–3 priorities;
-- task creation and completion;
-- basic time-block creation/edit/delete for the current day;
-- overbooking calculation;
-- persistence across reloads;
-- test, lint, typecheck, build, and CI gates.
+## 3. Smart Planner is the behavioral baseline
 
-### 3.2 Explicitly out of scope for the first implementation plan
+The legacy Smart Planner is not merely a source-code repository to mine for helpers. Its existing product behaviors are the inheritance baseline.
 
-The architecture must leave clean extension points for these features, but this plan does not implement them:
+The rebuild must preserve or intentionally supersede the following capability families:
 
-- Supabase Auth and cloud sync;
-- Realtime sync;
-- full Projects/Roadmaps UI;
-- Focus Station and timer;
-- Habits and routines;
-- Planner multi-day drag-and-drop;
-- Daily Shutdown;
-- Weekly Review;
-- AI task decomposition;
-- AI coach;
-- PWA install/offline service worker;
-- Web Push;
-- legacy Smart Planner import;
-- charts and analytics.
+1. **Daily capacity** — realistic available-time budgeting from 0 to 16 hours, with caution above 12 hours rather than a hard block.
+2. **Flexible planning and scheduling** — work can be placed into time, moved, forecast, and reconciled with capacity.
+3. **Focus sessions** — planned work becomes timed execution evidence.
+4. **Habit tracking** — repeated behaviors remain first-class rather than being modeled as ordinary tasks.
+5. **Projects, learning roadmaps, and progress** — the system can represent structured work, not only flat todos.
+6. **Weekly metrics/review** — historical behavior is summarized and used to adapt future planning.
+7. **PWA / reminders / Web Push** — the system can prompt planned behavior even when the app is not actively open.
+8. **Backup and migration** — local user data must be preservable and migratable.
+9. **Existing domain invariants and regression lessons** — scheduling, capacity, storage safety, date handling, focus-state behavior, progress calculations, and weekly metrics are behavioral evidence.
 
-These become separate sub-project specs/plans after the Foundation + Today slice is stable.
+A capability may be redesigned, split, or renamed, but it must not disappear accidentally during the rebuild.
 
-## 4. Why this is a rebuild instead of a port
+## 4. Rebuild policy
 
-The legacy Smart Planner is a functioning TanStack Start/Vite application with substantial domain logic and tests. It is useful as behavioral evidence, but the new product has materially different architectural goals:
+### 4.1 Preserve behavior, replace implementation
 
-- Next.js App Router instead of TanStack routing;
-- repository boundaries instead of product components talking directly to browser persistence;
-- an eventual local/cloud dual persistence model;
-- normalized entities for time blocks and daily priorities;
-- feature-oriented UI boundaries;
-- a future authenticated multi-device model.
+Use legacy tests, domain logic, and user-visible behavior as references.
 
-Directly porting the legacy route/component tree would preserve coupling that the rebuild is intended to remove.
+Reimplement the smallest equivalent behavior behind the new architecture, test-first.
 
-## 5. Selective-port policy
+Examples:
 
-Legacy code is classified into three categories.
-
-### 5.1 Port behavior, then reimplement behind new interfaces
-
-Use legacy tests and logic as behavioral references where they remain valid:
-
-- daily capacity constraints;
-- date normalization lessons;
+- capacity constraints;
 - scheduling invariants;
-- storage corruption/recovery behavior;
-- transaction/rollback lessons;
-- task/progress calculations.
+- focus timing semantics;
+- date normalization;
+- progress calculations;
+- safe persistence behavior;
+- weekly calculations;
+- roadmap/lesson placement rules.
 
-Do not copy modules blindly. Recreate the smallest equivalent domain function in the new architecture, test-first.
+### 4.2 Preserve concepts, improve the product loop
 
-### 5.2 Preserve concepts, redesign implementation
+These Smart Planner concepts survive but gain discipline behavior:
 
-These concepts survive but receive a new implementation:
+- Today planning becomes **Daily Commitment**;
+- focus sessions become **Execution Evidence**;
+- habit tracking gains **Context + Minimum Version + Recovery**;
+- weekly metrics become **Adaptive Weekly Review**;
+- rescheduling gains **Miss Reasons + Recovery Flow**;
+- reminders become **Commitment-aware prompts**;
+- progress becomes **Plan vs Reality**, not only completion counts.
 
-- Today planning;
-- scheduling;
-- storage;
-- progress recording;
-- backup/import boundaries;
-- forecasting inputs.
-
-### 5.3 Do not port
+### 4.3 Do not port technical debt
 
 Do not carry forward:
 
-- legacy route architecture;
-- oversized route/page components;
-- product state coupled directly to localStorage keys;
-- Lovable-specific runtime/error-reporting dependencies;
-- UI-specific regression contracts that conflict with the new design system;
-- redundant fields created only to satisfy the old presentation layer.
+- the legacy TanStack route/component tree;
+- oversized route/controller components;
+- feature code coupled directly to localStorage keys;
+- monolithic global application stores;
+- redundant UI-only domain fields;
+- Lovable-specific dependencies that are not product requirements;
+- mutation patterns that cannot report or recover from persistence failure;
+- tests that only preserve obsolete presentation quirks.
 
-## 6. Target stack
+## 5. Evidence-informed behavior design
 
-### Required for this slice
+The discipline layer is informed by research, but the product must not overstate what any single intervention can accomplish.
 
-- Next.js 15+ App Router
-- React 19
-- TypeScript strict mode
-- Tailwind CSS v4
-- shadcn/ui-compatible primitives
-- Lucide icons
-- Zod for runtime validation
-- Zustand only for short-lived client UI state when local component state is insufficient
-- Vitest for domain/unit tests
-- React Testing Library for focused component behavior
-- Playwright for the critical Today user journey
+### 5.1 Progress monitoring
 
-### Deferred
+Research synthesis has found that monitoring goal progress improves goal attainment, with stronger effects when progress is physically or visibly recorded.
 
-- Supabase
-- Vercel AI SDK
-- provider SDKs
-- Framer Motion
-- Howler/Web Audio
-- PWA tooling
+Product translation:
 
-Deferred dependencies must not be installed just because they appear in the long-term product vision.
+- planned vs actual is always visible;
+- important actions produce durable records;
+- weekly review uses observed data;
+- metrics are decomposable rather than opaque.
 
-## 7. Architectural rules
+### 5.2 Implementation intentions
 
-1. **Domain logic must not import React, Next.js, browser storage, or Supabase.**
-2. **Pages compose features; pages do not own business rules.**
-3. **Features do not call localStorage directly.**
-4. **Persistence is accessed through repository interfaces.**
-5. **Runtime persistence data is validated at the boundary.**
-6. **Mutation functions return explicit success/failure results where data loss is possible.**
-7. **A storage failure must never be interpreted as an empty dataset.**
-8. **Dates used for daily planning are local calendar dates, not UTC-day shortcuts.**
-9. **Time accounting has one canonical unit internally: integer minutes.**
-10. **No production feature code is written before its failing test, except generated/config-only files where TDD is not meaningful.**
+“If situation X occurs, I will perform behavior Y” planning has substantial evidence for improving goal attainment across contexts.
 
-## 8. Recommended project structure
+Product translation:
+
+- optional start cues;
+- explicit first action;
+- optional obstacle-response plans;
+- habit anchors;
+- rescue plans for repeatedly postponed work.
+
+The app must not force long forms for every task. Friction would undermine the intervention.
+
+### 5.3 Stable context and habit automaticity
+
+Repeated behavior in stable contexts is associated with stronger automaticity and goal attainment.
+
+Product translation:
+
+- habits can record cue/context;
+- repeated successful contexts become visible;
+- the product can later suggest stable times/contexts based on the user's own history.
+
+### 5.4 Time management
+
+Useful time-management systems require more than listing tasks. They must structure, protect, and adapt the use of time.
+
+Product translation:
+
+- capacity planning;
+- time blocks;
+- protected focus;
+- buffers;
+- replanning based on actual evidence.
+
+### 5.5 Commitment and precommitment
+
+Commitment mechanisms can reduce opportunistic plan changes, but rigid constraints can also become counterproductive.
+
+Product translation:
+
+- Normal Mode remains editable;
+- Commitment Mode adds friction and records overrides;
+- Emergency Override always exists;
+- the product does not trap the user in an impossible plan.
+
+### 5.6 Procrastination interventions
+
+Evidence for reducing procrastination is more mixed than evidence for generic goal progress monitoring. No single timer, SMART-goal form, streak, or if/then statement should be treated as a cure.
+
+Product translation:
+
+- combine planning, start cues, execution evidence, recovery, and review;
+- detect repeated avoidance;
+- shrink ambiguous work;
+- surface likely obstacles;
+- avoid shame-based feedback.
+
+## 6. Discipline Engine
+
+The new subsystem surrounding Smart Planner's inherited capabilities is the **Discipline Engine**.
 
 ```text
-personal-productivity-app/
-├── src/
-│   ├── app/
-│   │   ├── (dashboard)/
-│   │   │   ├── layout.tsx
-│   │   │   └── today/page.tsx
-│   │   ├── layout.tsx
-│   │   └── globals.css
-│   ├── features/
-│   │   └── today/
-│   │       ├── components/
-│   │       ├── hooks/
-│   │       ├── application/
-│   │       └── index.ts
-│   ├── domain/
-│   │   ├── work-items/
-│   │   ├── daily-plans/
-│   │   ├── time-blocks/
-│   │   ├── capacity/
-│   │   └── shared/
-│   ├── infrastructure/
-│   │   └── persistence/
-│   │       ├── contracts/
-│   │       └── guest/
-│   ├── components/
-│   │   ├── ui/
-│   │   └── shell/
-│   └── test/
-│       └── fixtures/
-├── e2e/
-├── docs/
-│   └── superpowers/
-│       ├── specs/
-│       └── plans/
-└── .github/workflows/
+SMART PLANNER DNA
+       │
+       ├── Capacity / Planner / Forecast
+       ├── Focus
+       ├── Habits
+       ├── Projects / Roadmaps / Progress
+       ├── Weekly Metrics
+       └── Reminders / Backup
+                    │
+                    ▼
+             DISCIPLINE ENGINE
+                    │
+      ┌─────────────┼─────────────┐
+      ▼             ▼             ▼
+  Commitment     Execution      Recovery
+      │             │             │
+      └─────────────┼─────────────┘
+                    ▼
+                Reflection
+                    ▼
+               Weekly Review
+                    ▼
+              Adaptive Planning
 ```
 
-### File-size guidance
+The Discipline Engine owns cross-feature behavioral concepts such as commitments, overrides, miss reasons, start latency, rescue triggers, and derived discipline metrics.
 
-There is no hard line-count rule, but files should have one clear responsibility. A feature page that grows into a multi-thousand-line controller is a design failure. Split by behavior boundary, not by arbitrary component count.
+It must not become one giant store or service. Domain concepts remain separated by responsibility.
 
-## 9. Domain model
+## 7. Daily operating loop
 
-### 9.1 Identifier strategy
+### 7.1 Capture
 
-Use string UUIDs generated by `crypto.randomUUID()` at creation time.
+The user can quickly create work without completing a large planning form.
 
-All entities have stable IDs before persistence. This allows guest data to migrate to cloud storage later without changing identity semantics.
+Minimum task capture:
 
-### 9.2 Project
+- title;
+- estimated duration;
+- priority.
+
+Optional detail can be added later.
+
+### 7.2 Capacity
+
+The user declares realistic available work time for the local calendar day.
+
+Rules:
+
+- 0–960 minutes;
+- UI step 30 minutes;
+- >720 minutes allowed with non-blocking caution;
+- persisted invalid values fail validation rather than silently clamp.
+
+### 7.3 Select commitments
+
+The Today flow highlights **Top 1–3** priorities.
+
+The user can still have more tasks, but Top 1–3 defines what must receive the clearest execution path.
+
+### 7.4 Time-block important work
+
+At least important commitments should be placeable into a local-day timeline.
+
+The product continuously shows:
+
+```text
+capacityMinutes
+scheduledMinutes
+remainingMinutes
+isOverbooked
+bufferMinutes
+```
+
+Overbooking is visible but not blocked.
+
+### 7.5 Commit Today
+
+A user may explicitly commit the day's plan.
+
+A commitment snapshot records what the user intended at the time of commitment. Later edits do not erase the original plan.
+
+This enables honest plan-vs-reality measurement.
+
+## 8. Commitment model
+
+### 8.1 Modes
+
+Two product modes exist:
+
+**Normal Mode**
+
+- planning remains freely editable;
+- useful during exploration and unstable days.
+
+**Commitment Mode**
+
+- the user explicitly commits a plan/session;
+- destructive or meaning-changing edits gain friction;
+- significant overrides require a reason;
+- the old committed state remains available for comparison;
+- the user can always use Emergency Override.
+
+### 8.2 No fake lock
+
+A web application cannot reliably block arbitrary external apps or websites by itself.
+
+V1 Commitment Mode therefore governs product behavior only.
+
+True distraction blocking is a separate future companion/extension subsystem and must never be falsely represented as active if the browser/OS cannot enforce it.
+
+### 8.3 Commitment snapshots
+
+Use immutable snapshots/events rather than rewriting history.
+
+A future-compatible model:
+
+```ts
+export interface DailyCommitment {
+  id: string;
+  dailyPlanId: string;
+  committedAt: string;
+  capacityMinutes: number;
+  note: string;
+}
+
+export interface DailyCommitmentItem {
+  id: string;
+  commitmentId: string;
+  workItemId: string;
+  priorityRank: 1 | 2 | 3 | null;
+  plannedMinutes: number;
+}
+```
+
+Committed time blocks may later be snapshotted by IDs plus immutable planned values.
+
+## 9. Plan vs Reality
+
+Plan-vs-reality is a central product view, not an analytics afterthought.
+
+Primary metrics include:
+
+- committed planned minutes;
+- actual focused minutes;
+- commitment completion rate;
+- completed priority count;
+- median start latency;
+- number/rate of carried-over commitments;
+- estimation error;
+- focus completion rate;
+- interruption count;
+- override count;
+- recovery success after misses.
+
+Do not equate scheduled time with actual focused time.
+
+Do not infer `actualMinutes` merely because a task is marked complete.
+
+## 10. Discipline Score policy
+
+A Discipline Score is optional and must not be implemented in the first slice unless its components already exist.
+
+If introduced later:
+
+- it must be decomposable;
+- its formula must be documented;
+- raw component metrics must be visible;
+- it must not reward app usage for its own sake;
+- it must not punish legitimate rest or a consciously reduced capacity day;
+- it must not create perverse incentives to make tiny easy commitments.
+
+Possible components:
+
+```text
+commitment reliability
+start reliability
+focus completion
+habit consistency
+recovery reliability
+```
+
+The formula is explicitly deferred to the Weekly Review subsystem spec.
+
+## 11. Miss handling
+
+A missed commitment must not silently roll over forever.
+
+### 11.1 Miss reasons
+
+When a meaningful committed item is missed or explicitly abandoned, the system can record one lightweight reason:
+
+- underestimated time;
+- started too late;
+- distracted;
+- task too difficult;
+- task too vague;
+- unexpected obligation;
+- energy/recovery constraint;
+- consciously deprioritized;
+- other.
+
+The taxonomy must stay short enough to use.
+
+### 11.2 Preserve agency
+
+The system records what happened; it does not shame the user.
+
+Copy should describe behavior, not character.
+
+Bad:
+
+> You were lazy again.
+
+Good:
+
+> This task has been moved three times. The most common recorded reason is “task too vague”.
+
+## 12. Anti-Procrastination Rescue
+
+Repeated avoidance triggers a rescue flow instead of another silent rollover.
+
+Initial trigger candidate:
+
+- a committed work item missed/rescheduled at least 3 times within a bounded recent period.
+
+Final threshold belongs to the subsystem implementation spec and should be easy to tune.
+
+Rescue flow:
+
+```text
+What outcome matters?
+        ↓
+What is the real obstacle?
+        ↓
+Can the task be shrunk?
+        ↓
+What is the first physical action?
+        ↓
+When/where will it start?
+        ↓
+If the obstacle appears, what will you do?
+```
+
+The rescue must produce an executable next action, not a motivational essay.
+
+## 13. Start Ritual
+
+Important work can optionally include:
+
+```ts
+export interface StartPlan {
+  workItemId: string;
+  localStartTime: string | null;
+  contextLabel: string | null;
+  firstAction: string | null;
+  obstacle: string | null;
+  obstacleResponse: string | null;
+}
+```
+
+Example:
+
+```text
+17:00
+Desk
+Open exercise sheet and solve question 1
+If I want to open short-form video → capture the urge and continue 5 minutes
+```
+
+Start Ritual fields must be progressively disclosed. Quick Capture remains quick.
+
+## 14. Focus Station inheritance + upgrade
+
+Focus is a required Smart Planner inheritance capability.
+
+The new Focus Station eventually supports:
+
+- start/pause/resume/finish state machine;
+- planned duration;
+- real elapsed focus duration derived robustly from timestamps;
+- persistence through reload/sleep where feasible;
+- association with work item/project;
+- distraction inbox;
+- interruption count;
+- optional focus quality rating;
+- end-of-session reflection;
+- actualMinutes evidence;
+- commitment override recording.
+
+### 14.1 Distraction inbox
+
+During a session the user can capture an urge/thought without leaving the execution context.
+
+Example:
+
+```text
+TikTok
+reply to message
+look up laptop
+```
+
+Capturing a distraction must take only a few seconds and must not stop the timer by default.
+
+### 14.2 Focus truthfulness
+
+The system must distinguish:
+
+- scheduled duration;
+- timer elapsed duration;
+- finalized focused duration.
+
+A 50-minute time block is not evidence of 50 minutes of focus.
+
+## 15. Habit system inheritance + upgrade
+
+Habits remain first-class entities.
+
+Future habit model should support:
+
+- schedule/frequency;
+- cue/anchor;
+- context;
+- minimum version;
+- normal version;
+- completion logs;
+- consistency;
+- missed opportunities;
+- recovery behavior.
+
+Example:
+
+```text
+Habit: Review vocabulary
+Cue: after breakfast
+Context: desk
+Minimum version: 5 minutes
+Normal version: 20 minutes
+Target: 6 opportunities/week
+```
+
+### 15.1 Never Miss Twice as recovery heuristic
+
+“Never Miss Twice” is a product recovery heuristic, not a scientific guarantee.
+
+After a miss, the next planned opportunity should emphasize a small restart rather than punishment or compensatory overload.
+
+The system must preserve prior history even when a streak breaks.
+
+## 16. Weekly Review is the adaptation engine
+
+Weekly Review is required, not decorative analytics.
+
+It should eventually answer:
+
+- What did I commit to?
+- What did I actually do?
+- When did I reliably start?
+- Which time windows produced the best completion/focus?
+- Which task types were systematically underestimated?
+- What caused misses?
+- Which habits recovered after misses?
+- What work keeps rolling over?
+- What one or two changes should be tested next week?
+
+Example metrics:
+
+```text
+Committed focus        18h
+Actual focus           14h 40m
+Commitment reliability 81%
+Median start delay     14m
+Carry-over rate        12%
+Most common miss       underestimated duration
+Best focus window      17:10–19:20
+```
+
+Recommendations must reference observable data and explain the evidence behind the recommendation.
+
+## 17. AI Coach boundary
+
+AI is not the source of truth for discipline metrics.
+
+AI receives structured observed data and produces explanations/options.
+
+AI must not fabricate behavior history.
+
+Good AI roles:
+
+- decompose a vague work item;
+- summarize weekly behavioral patterns;
+- propose one experiment for next week;
+- help create an obstacle-response plan;
+- help turn a repeatedly avoided task into a smaller action;
+- explain why a plan is overcommitted.
+
+Bad AI roles:
+
+- generic motivational chat as the primary value;
+- silently changing the user's plan;
+- assigning an unexplained discipline score;
+- inventing causes for misses with no supporting data.
+
+Provider/model selection and BYOK remain deferred.
+
+## 18. Domain model baseline
+
+### 18.1 Identifier strategy
+
+Use string UUIDs created at entity creation time.
+
+Guest-created IDs remain stable when migrating to cloud storage later.
+
+### 18.2 Project
 
 ```ts
 export type ProjectStatus = "active" | "archived" | "completed";
@@ -239,9 +634,7 @@ export interface Project {
 }
 ```
 
-Project UI is deferred, but `projectId` is part of the work-item model from the beginning so the data model does not require a destructive rewrite later.
-
-### 9.3 Work Item
+### 18.3 Work Item
 
 ```ts
 export type WorkItemType = "task" | "lesson" | "milestone";
@@ -264,16 +657,12 @@ export interface WorkItem {
 }
 ```
 
-### 9.4 Daily Plan
-
-`top_3_item_ids uuid[]` is intentionally rejected as the long-term persistence design because arrays do not provide a normalized relationship or stable ordering constraints in relational storage.
-
-Domain representation:
+### 18.4 Daily Plan
 
 ```ts
 export interface DailyPlan {
   id: string;
-  date: string; // YYYY-MM-DD in the user's local calendar
+  date: string;
   capacityMinutes: number;
   morningIntention: string;
   createdAt: string;
@@ -288,11 +677,9 @@ export interface DailyPriority {
 }
 ```
 
-In the future Supabase schema, `daily_priorities` becomes a table with uniqueness constraints for `(daily_plan_id, rank)` and `(daily_plan_id, work_item_id)`.
+Top priorities are normalized rather than stored as an array in relational persistence.
 
-### 9.5 Time Block
-
-Scheduling is normalized into its own entity instead of embedding one start time in a work item.
+### 18.5 Time Block
 
 ```ts
 export interface TimeBlock {
@@ -300,148 +687,61 @@ export interface TimeBlock {
   date: string;
   workItemId: string | null;
   habitId: string | null;
-  startMinute: number; // minute from midnight, 0..1439
-  endMinute: number;   // exclusive, 1..1440
+  startMinute: number;
+  endMinute: number;
   createdAt: string;
   updatedAt: string;
 }
 ```
 
-For this slice only `workItemId` is used; `habitId` remains `null` until Habits is implemented.
+Rules:
 
-Invariants:
-
-- exactly one target must eventually be present (`workItemId` xor `habitId`);
+- exactly one target eventually exists (`workItemId` xor `habitId`);
 - `startMinute < endMinute`;
-- both bounds must remain within one local calendar day;
-- overlapping blocks are allowed initially but visibly flagged;
-- a work item may have multiple blocks on the same or different days.
+- bounds stay in one local day;
+- overlaps are allowed but visibly flagged;
+- work items may have multiple blocks.
 
-## 10. Capacity model
+## 19. Local date and time policy
 
-Canonical capacity is integer minutes.
+Internal duration unit: **integer minutes**.
 
-Rules:
+Daily planning uses local calendar dates.
 
-- minimum: `0` minutes;
-- maximum: `960` minutes (16 hours);
-- UI step: `30` minutes;
-- values above `720` minutes (12 hours) are allowed but show a non-blocking caution;
-- invalid persisted values fail validation rather than silently clamp.
-
-Derived values:
+Never derive a daily key using:
 
 ```ts
-scheduledMinutes = sum(duration of today's time blocks)
-remainingMinutes = capacityMinutes - scheduledMinutes
-isOverbooked = remainingMinutes < 0
+new Date().toISOString().slice(0, 10)
 ```
 
-The UI may format values as hours/minutes, but domain functions accept and return minutes.
+because it uses UTC and can represent the wrong local date.
 
-## 11. Today Workstation behavior
+Provide explicit local-date helpers with tests around midnight and positive UTC offsets such as Vietnam/Asia-Bangkok.
 
-### 11.1 Required page sections
+## 20. Architectural rules
 
-The first production page contains:
+1. Domain logic must not import React, Next.js, IndexedDB, localStorage, or Supabase.
+2. Pages compose features; pages do not own business rules.
+3. Product components do not access persistence primitives directly.
+4. Persistence is accessed through repository/application boundaries.
+5. Runtime persistence data is validated before becoming domain data.
+6. Storage failure is never interpreted as an empty dataset.
+7. Multi-entity mutations that require atomicity use real transactions.
+8. Significant commitment edits preserve history rather than rewrite it.
+9. Scheduling data and actual execution evidence remain separate.
+10. Dates are local-calendar aware.
+11. Time accounting uses integer minutes internally.
+12. No monolithic global application store.
+13. No production feature behavior before its failing test, except config/generated files where TDD is not meaningful.
+14. Smart Planner behavioral capabilities cannot be removed without an explicit design decision and replacement rationale.
 
-1. **Today header** — local date and short daily status;
-2. **Capacity card** — capacity, scheduled time, remaining time, overbooking state;
-3. **Top Priorities** — ranked Top 1–3 work items;
-4. **Today Tasks** — work items relevant to the current day;
-5. **Timeline** — time blocks for today;
-6. **Quick Capture** — create a simple task with title, estimate, and priority.
+## 21. Persistence architecture
 
-### 11.2 Quick task capture
+### 21.1 Repository boundary
 
-The first slice supports direct fields, not smart command syntax.
+Feature/application code talks to interfaces, not storage technology.
 
-Required fields:
-
-- title;
-- estimated duration;
-- priority.
-
-Defaults:
-
-- type = `task`;
-- status = `backlog`;
-- projectId = `null`;
-- notes = empty string;
-- actualMinutes = 0.
-
-Smart syntax (`/project`, `~45m`, `!p1`) is deferred until the base task flow is stable.
-
-### 11.3 Top priorities
-
-Rules:
-
-- zero to three priorities may exist;
-- each selected item appears once;
-- ranks are contiguous from 1;
-- removing rank 2 from `[1,2,3]` compacts the remaining priorities to `[1,2]`;
-- completed tasks may remain visible in the priorities list for the current day, clearly marked complete;
-- a user may replace/reorder priorities without mutating the work item itself.
-
-### 11.4 Task completion
-
-Completing a task:
-
-- changes status to `completed`;
-- sets `completedAt` to the current ISO timestamp;
-- keeps time blocks as historical scheduling evidence;
-- does not infer actualMinutes from scheduled duration.
-
-Reopening a task:
-
-- returns status to `scheduled` if future/today blocks exist, otherwise `backlog`;
-- clears `completedAt`.
-
-Actual focus time will later be recorded by Focus Sessions, not fabricated from task completion.
-
-### 11.5 Time blocks
-
-The first slice supports create, edit, and delete through explicit controls. Drag-and-drop is deferred.
-
-Time-block validation must reject:
-
-- end <= start;
-- start < 0;
-- end > 1440;
-- missing target;
-- unknown workItemId.
-
-Overlaps produce a warning, not a failed mutation.
-
-## 12. Application-service boundary
-
-React components call feature application services/hooks, not repositories directly wherever a mutation spans more than one entity.
-
-Example operations:
-
-```ts
-createTask(input): Promise<Result<WorkItem>>
-setDailyCapacity(date, minutes): Promise<Result<DailyPlan>>
-setDailyPriorities(date, workItemIds): Promise<Result<DailyPriority[]>>
-completeTask(workItemId, completedAt): Promise<Result<WorkItem>>
-reopenTask(workItemId): Promise<Result<WorkItem>>
-createTimeBlock(input): Promise<Result<TimeBlock>>
-updateTimeBlock(id, patch): Promise<Result<TimeBlock>>
-deleteTimeBlock(id): Promise<Result<void>>
-getTodayView(date): Promise<Result<TodayViewModel>>
-```
-
-A shared result type prevents expected persistence failures from being turned into unhandled exceptions:
-
-```ts
-export type Result<T> =
-  | { ok: true; value: T }
-  | { ok: false; code: string; message: string };
-```
-
-## 13. Repository contracts
-
-The domain/application layer depends on interfaces such as:
+Representative contracts:
 
 ```ts
 export interface WorkItemRepository {
@@ -456,11 +756,6 @@ export interface DailyPlanRepository {
   save(plan: DailyPlan): Promise<Result<void>>;
 }
 
-export interface DailyPriorityRepository {
-  listByPlan(planId: string): Promise<Result<DailyPriority[]>>;
-  replaceForPlan(planId: string, priorities: DailyPriority[]): Promise<Result<void>>;
-}
-
 export interface TimeBlockRepository {
   listByDate(date: string): Promise<Result<TimeBlock[]>>;
   save(block: TimeBlock): Promise<Result<void>>;
@@ -468,219 +763,278 @@ export interface TimeBlockRepository {
 }
 ```
 
-The exact method grouping may be simplified during the implementation plan if a smaller interface gives the same isolation. The architectural invariant is that feature/domain code cannot know whether data came from browser persistence or Supabase.
+A shared explicit result type:
 
-## 14. Guest persistence design
+```ts
+export type Result<T> =
+  | { ok: true; value: T }
+  | { ok: false; code: string; message: string };
+```
 
-### 14.1 Storage choice
+### 21.2 Guest storage
 
-Use **IndexedDB** as the primary guest store for normalized application entities.
+Use IndexedDB as the primary normalized guest store.
 
-Rationale:
-
-- the product will accumulate structured records over time;
-- entity-level writes are preferable to rewriting one large JSON blob;
-- IndexedDB is a more appropriate long-term local data store than many unrelated localStorage keys;
-- future import/export can take a consistent snapshot of normalized stores.
-
-Use localStorage only for tiny non-critical UI preferences if needed later.
-
-### 14.2 Versioned database
-
-Initial database name:
-
-`personal-productivity-guest`
-
-Initial logical stores:
+Initial logical stores may include:
 
 - `workItems`;
 - `dailyPlans`;
 - `dailyPriorities`;
 - `timeBlocks`;
+- `dailyCommitments`;
+- `dailyCommitmentItems`;
 - `meta`.
 
-`meta` includes a schema version and migration metadata.
+Only stores actually required by an implemented slice should be created. Do not prebuild the entire future schema without behavior.
 
-### 14.3 Validation
+Every loaded record is schema-validated.
 
-Every record loaded from IndexedDB is validated with Zod before it becomes a domain object.
+Invalid data:
 
-Invalid records:
+- is not silently dropped;
+- is not automatically overwritten;
+- produces a structured persistence error;
+- remains recoverable/exportable.
 
-- are not silently dropped;
-- generate a structured persistence error;
-- remain untouched in storage so recovery/export remains possible;
-- block only the affected query where possible, not the entire application shell.
+### 21.3 Future cloud mapping
 
-### 14.4 Safe mutations
+Supabase remains behind the same behavioral/application boundaries.
 
-A mutation that updates multiple stores must run in one IndexedDB transaction.
+Expected future relational entities include:
 
-Examples:
+- profiles;
+- projects;
+- work_items;
+- daily_plans;
+- daily_priorities;
+- time_blocks;
+- daily_commitments;
+- commitment_items;
+- focus_sessions;
+- habits;
+- habit_logs;
+- miss_events;
+- daily_reflections.
 
-- replacing all priorities for a day;
-- deleting an item in a future feature when dependent relationships also require changes.
+Cloud sync, conflict resolution, and guest-account merging require a separate spec.
 
-The transaction either commits fully or aborts.
+## 22. UI/UX direction
 
-This preserves the key lesson from the legacy app's verified-write/snapshot behavior without copying its localStorage implementation.
+The app should feel like an **execution workstation**, not a card museum.
 
-## 15. Local date policy
+Visual hierarchy:
 
-Daily planning must never derive a calendar date using `new Date().toISOString().slice(0, 10)` because that is a UTC date and can be wrong for the user's local day.
+1. what matters now;
+2. whether today's plan is realistic;
+3. next start time/action;
+4. current execution state;
+5. what changed from the committed plan;
+6. secondary analytics/settings.
 
-Provide explicit helpers:
+Interaction principles:
 
-```ts
-toLocalDateKey(date: Date): string
-parseLocalDateKey(value: string): LocalDateParts | null
-```
-
-Tests must cover at least a positive UTC offset representative of Asia/Bangkok/Vietnam and a date near midnight.
-
-## 16. Future Supabase mapping
-
-Cloud implementation is deferred, but local types must map cleanly to the future relational model.
-
-Expected tables:
-
-- `profiles` (`id` references `auth.users.id`);
-- `projects`;
-- `work_items`;
-- `daily_plans`;
-- `daily_priorities`;
-- `time_blocks`;
-- later: `habits`, `habit_logs`, `focus_sessions`, `daily_reflections`.
-
-Important future constraints:
-
-- unique `daily_plans(user_id, date)`;
-- unique `daily_priorities(daily_plan_id, rank)`;
-- unique `daily_priorities(daily_plan_id, work_item_id)`;
-- RLS requires `user_id = auth.uid()` for user-owned rows;
-- authenticated sync must not rewrite entity IDs created in guest mode.
-
-## 17. UI/UX direction
-
-The UI should feel like a focused workstation rather than an analytics dashboard full of cards.
-
-### Visual hierarchy
-
-1. what must be done today;
-2. whether today's plan fits available time;
-3. when work is scheduled;
-4. secondary controls/settings.
-
-### Interaction principles
-
-- primary actions remain visible without opening multiple dialogs;
-- keyboard use is first-class for quick capture;
-- desktop has a persistent sidebar shell;
-- mobile uses a compact navigation pattern without shrinking desktop UI mechanically;
-- destructive actions require an undo path or confirmation where appropriate;
-- errors say what failed and whether data was preserved;
-- motion is optional polish, not a dependency for understanding state.
-
-### Accessibility baseline
-
-- semantic labels for controls;
-- visible keyboard focus;
+- Quick Capture must remain fast;
+- advanced discipline fields use progressive disclosure;
+- primary actions remain visible;
+- keyboard interaction is first-class;
+- mobile has its own compact navigation pattern;
+- destructive actions have undo/confirmation when appropriate;
+- commitment overrides clearly explain consequences;
+- errors state whether data was preserved;
 - no color-only status communication;
-- minimum touch target appropriate for mobile;
-- reduced-motion compatibility when motion is introduced later.
+- visible keyboard focus and reduced-motion compatibility.
 
-## 18. State ownership
+## 23. First implementation slice
 
-Use the smallest state scope possible.
+The first implementation slice remains deliberately narrow:
 
-- Form field state: local component state / React Hook Form if justified.
-- Remote/local entity data: repository-backed query layer.
-- Temporary UI state such as open panels: local state or small Zustand store.
-- Business state must not live only in Zustand.
+### Foundation + Today + Minimal Commitment
 
-Do not introduce a monolithic global app store.
+It includes:
 
-## 19. Error handling
+- Next.js App Router foundation;
+- TypeScript strict mode;
+- Tailwind CSS v4;
+- shadcn/ui-compatible primitives;
+- responsive shell;
+- Work Item, Daily Plan, Daily Priority, Time Block domain rules;
+- guest IndexedDB persistence;
+- Today Workstation;
+- 0–16h capacity;
+- task capture;
+- Top 1–3 priorities;
+- explicit time blocks;
+- overbooking visibility;
+- task completion/reopen;
+- **Commit Today snapshot**;
+- simple Plan vs Reality baseline using data available in this slice;
+- reload persistence;
+- test/lint/typecheck/build/e2e/CI.
 
-Expected failure classes:
+### Explicitly not in first slice
 
-- validation error;
-- persistence unavailable;
-- persistence transaction failure;
-- corrupt stored record;
-- unknown entity reference;
-- invalid time block;
-- invalid capacity;
-- UI/runtime unexpected failure.
+- full Focus Station;
+- Habits;
+- full Projects/Roadmaps UI;
+- multi-day Planner;
+- forecasting;
+- Weekly Review;
+- Rescue Flow;
+- AI Coach;
+- Supabase;
+- PWA/Push;
+- legacy migration.
 
-The UI should distinguish recoverable user input errors from persistence failures.
+Those features remain mandatory roadmap inheritances, but are separate testable subprojects.
 
-A persistence failure message must state that the requested write did not complete. The UI must not optimistically display a successful mutation after a failed transaction.
+## 24. Today Workstation behavior
 
-## 20. Data preservation rules
+Required visible sections:
 
-1. Never overwrite unreadable persisted data during application boot.
-2. Never auto-reset the guest database because validation fails.
-3. A factory reset feature is deferred and must later require explicit user action.
-4. Import/migration must later preview and validate before replacing current data.
-5. Legacy migration must preserve the source export untouched.
+1. **Today Header** — local date, current commitment state, next meaningful action.
+2. **Capacity** — available, scheduled, remaining/buffer, overbooking.
+3. **Top Priorities** — ranked Top 1–3.
+4. **Today Tasks** — work relevant to today.
+5. **Timeline** — today's time blocks.
+6. **Quick Capture** — title, estimate, priority.
+7. **Commitment Summary** — before/after commit state.
 
-## 21. Testing strategy
+### 24.1 Top priorities
 
-### 21.1 Domain/unit tests
+- zero to three;
+- unique work items;
+- contiguous ranks;
+- removing rank 2 from `[1,2,3]` compacts to `[1,2]`;
+- completed priorities may remain visible for historical context;
+- priority membership does not mutate the work item itself.
+
+### 24.2 Task completion
+
+Completing a task:
+
+- sets status `completed`;
+- sets `completedAt`;
+- does not delete scheduled blocks;
+- does not infer actual focus time.
+
+Reopening:
+
+- clears `completedAt`;
+- returns to scheduled if relevant blocks exist, otherwise backlog.
+
+### 24.3 Time-block validation
+
+Reject:
+
+- end <= start;
+- start < 0;
+- end > 1440;
+- missing target;
+- unknown work item.
+
+Overlap is warning-only in the first slice.
+
+## 25. First-slice commitment behavior
+
+The user can press **Commit Today** after defining the day.
+
+The app records an immutable commitment snapshot containing at least:
+
+- commitment timestamp;
+- capacity at commitment;
+- committed Top priorities;
+- planned minutes for committed items;
+- relevant time-block planning values.
+
+After commit:
+
+- ordinary edits remain possible in V1;
+- the UI clearly marks the plan as changed when current state diverges from the committed snapshot;
+- the committed snapshot remains preserved;
+- no punitive lock is introduced yet.
+
+This creates the data foundation for later Commitment Mode without overbuilding it in slice 1.
+
+## 26. Testing strategy
+
+### 26.1 Domain tests
 
 Required first-slice coverage:
 
-- capacity min/max/step validation;
+- capacity min/max/step;
 - overbooking calculation;
-- local date key correctness;
+- local-date correctness;
 - priority uniqueness/ranking/compaction;
-- work-item completion/reopen behavior;
-- time-block bounds and duration;
+- work-item completion/reopen;
+- time-block bounds/duration;
 - overlap detection;
-- Today view-model aggregation.
+- Today aggregation;
+- commitment snapshot immutability;
+- divergence detection between committed and current plan.
 
-### 21.2 Persistence tests
+### 26.2 Persistence tests
 
-Use a deterministic IndexedDB test environment.
+Use deterministic IndexedDB testing.
 
 Cover:
 
-- create/read/update/delete per store;
-- persistence across repository re-instantiation;
-- invalid record handling;
-- failed multi-store transaction does not leave partial state;
-- priority replacement is atomic.
+- CRUD for implemented stores;
+- repository re-instantiation/reload;
+- corrupt-record handling;
+- atomic priority replacement;
+- failed transaction leaves no partial state;
+- commitment snapshots remain unchanged after later plan edits.
 
-### 21.3 Component tests
+### 26.3 Component tests
 
-Test meaningful behaviors, not snapshots:
+Test behavior rather than snapshots:
 
-- creating a task adds it to Today;
-- selecting priorities enforces max three;
-- changing capacity updates remaining/overbooking state;
-- completing a task changes visible status;
-- invalid time block is rejected with a useful message.
+- create task;
+- set capacity;
+- enforce max three priorities;
+- create/edit/delete time block;
+- overbooking warning;
+- complete/reopen task;
+- commit a plan;
+- edit after commitment and show divergence without destroying history.
 
-### 21.4 E2E acceptance flow
+### 26.4 E2E acceptance journey
 
-The production-critical path is:
+```text
+open /today as new guest
+  ↓
+set capacity = 5h
+  ↓
+create at least 3 tasks
+  ↓
+choose Top 3
+  ↓
+create at least one time block
+  ↓
+Commit Today
+  ↓
+edit one planned value
+  ↓
+verify divergence from commitment is visible
+  ↓
+complete a task
+  ↓
+reload
+  ↓
+verify tasks, priorities, capacity, blocks,
+commitment snapshot, divergence state and completion persist
+```
 
-1. open `/today` as a new guest;
-2. set capacity to 5 hours;
-3. create at least three tasks;
-4. choose Top 3;
-5. schedule at least one task with a time block;
-6. observe remaining capacity;
-7. complete a task;
-8. reload the browser;
-9. verify tasks, priorities, capacity, time block, and completion state persisted correctly.
+Second E2E:
 
-A second E2E test must create an overbooked day and verify the warning appears without blocking the schedule.
+- create an overbooked day;
+- confirm warning appears;
+- scheduling remains allowed;
+- commit snapshot preserves the overbooked plan exactly as committed.
 
-## 22. Quality gates
+## 27. Quality gates
 
-All must pass before the first slice is called complete:
+All must pass before the first slice is complete:
 
 ```bash
 bun run typecheck
@@ -690,126 +1044,161 @@ bun run build
 bun run e2e
 ```
 
-CI runs the same checks from committed source without mutation scripts that rewrite application files before validation.
+CI runs the same gates against committed source.
 
-The build must not depend on secret environment variables for this guest-only slice.
+Build/test scripts must not mutate application source before validation.
 
-## 23. CI design
+The guest-only slice requires no secret environment variables.
 
-Initial GitHub Actions workflow:
+## 28. Delivery roadmap
 
-- install using the committed lockfile;
-- run typecheck;
-- run lint;
-- run unit/component tests;
-- run production build;
-- run Playwright critical flow in a browser job.
+The intended implementation sequence is:
 
-Avoid a build command that implicitly runs tests if CI already runs tests explicitly; each gate should fail independently with a clear reason.
+1. **Foundation + Today + Minimal Commitment**
+2. **Focus Station + distraction capture + execution evidence**
+3. **Habits & Routines + context + minimum version + recovery**
+4. **Projects / Roadmaps / Flexible Planner / Forecast**
+5. **Miss Events + Anti-Procrastination Rescue**
+6. **Legacy Smart Planner Migration + behavior parity audit**
+7. **Shutdown + Weekly Review + transparent discipline metrics**
+8. **Supabase Auth / cloud sync / guest-account migration**
+9. **AI Coach boundary**
+10. **PWA / Push / commitment-aware reminders**
+11. **Optional enforcement companion / browser distraction blocker**
 
-## 24. Security and privacy baseline
+The exact sequencing of steps 5–7 may change if implementation evidence shows migration should happen earlier, but no inherited Smart Planner capability may be silently omitted.
 
-For the first slice:
+## 29. Behavior parity register requirement
+
+Before the rebuild is declared a successor to Smart Planner, maintain a parity register with each inherited behavior classified as:
+
+```text
+PRESERVED
+SUPERSEDED
+INTENTIONALLY REMOVED
+NOT YET IMPLEMENTED
+```
+
+Every `SUPERSEDED` or `INTENTIONALLY REMOVED` item requires rationale.
+
+At minimum the register must cover:
+
+- capacity;
+- flexible planner;
+- schedule forecasting;
+- focus timer/preferences/transitions;
+- habits;
+- projects/roadmaps/lesson placement;
+- progress analytics;
+- weekly metrics;
+- PWA/push;
+- backup/storage/migration behavior.
+
+This prevents a clean rewrite from accidentally becoming a feature regression.
+
+## 30. Data preservation rules
+
+1. Never overwrite unreadable persistence during boot.
+2. Never auto-reset because validation fails.
+3. Never rewrite commitment history when the current plan changes.
+4. Never fabricate actual work from scheduled work.
+5. Migration previews before replacement.
+6. Legacy source exports remain untouched.
+7. Multi-store changes that must be atomic use one transaction.
+8. Factory reset requires explicit user action and is a later feature.
+
+## 31. Security and privacy baseline
+
+First slice:
 
 - no API keys;
 - no analytics SDK by default;
 - no network persistence;
 - no hidden upload of guest data;
-- no secrets embedded in the client bundle.
+- no secrets in client bundles.
 
-Future BYOK support must not store provider secrets in Supabase by default. Provider integrations require their own security review/spec.
+Future AI/BYOK and cloud sync receive separate security design reviews.
 
-## 25. Performance baseline
+## 32. Performance baseline
 
-The Today page should not require loading future heavy modules.
+Today must not load future heavy systems.
 
-Requirements:
+First slice must not bundle:
 
-- feature-level code split where Next.js naturally provides it;
-- no charting library in the initial bundle;
-- no AI/provider SDK in the initial bundle;
-- no audio dependency in the initial bundle;
-- repository queries scoped to the data needed for Today.
+- charting libraries;
+- AI/provider SDKs;
+- audio engines;
+- Supabase client solely for future use;
+- drag-and-drop libraries before multi-day planning requires them.
 
-## 26. Future subsystem boundaries
+Repository queries should load only data relevant to the current Today view.
 
-After this slice, follow-up specs should be implemented in this order unless evidence changes the priority:
+## 33. Evidence register
 
-1. **Focus Station** — timer state machine, focus sessions, distraction braindump, actual-minute evidence;
-2. **Habits & Routines** — habit schedule, logs, consistency, Never Miss Twice;
-3. **Projects + Flexible Planner** — roadmap hierarchy, backlog, multi-day planning, forecast;
-4. **Legacy Migration** — Smart Planner export parser, preview, atomic import, verification;
-5. **Shutdown + Weekly Review** — reflections, metrics, discipline score;
-6. **Cloud Sync** — Supabase Auth, RLS, guest-account migration, conflict policy;
-7. **AI boundary** — decomposition and coaching with provider abstraction/BYOK;
-8. **PWA + Notifications** — offline behavior and push scheduling.
+The behavioral design is informed by the following research areas and representative sources. These sources guide product hypotheses; they do not justify claiming that the app can guarantee discipline.
 
-Each subsystem gets a separate design/implementation plan and must produce independently testable software.
+1. **Progress monitoring and goal attainment**  
+   Harkin et al. (2016), *Does Monitoring Goal Progress Promote Goal Attainment? A Meta-Analysis of the Experimental Evidence*, Psychological Bulletin. PMID 26479070.
 
-## 27. Acceptance criteria for Foundation + Today
+2. **Implementation intentions**  
+   Gollwitzer & Sheeran (2006), *Implementation Intentions and Goal Achievement: A Meta-analysis of Effects and Processes*, Advances in Experimental Social Psychology.
 
-The slice is accepted only when all statements are true:
+3. **Stable context and habit automaticity**  
+   Research examining context stability, habit automaticity, and goal attainment in repeated behaviors.
 
-- repository contains a clean Next.js application;
-- `/today` is the primary working screen;
-- user can create tasks;
-- user can set daily capacity from 0 to 16 hours in 30-minute increments;
-- user can choose and reorder at most three priorities;
-- user can create/edit/delete today's time blocks;
-- UI calculates scheduled and remaining time correctly;
-- overbooking is visible but non-blocking;
-- user can complete and reopen tasks;
-- reload preserves all first-slice data;
-- corrupt persistence does not silently erase itself;
-- no product component calls localStorage directly;
-- domain logic is independent of React/Next/persistence;
-- tests cover core invariants;
-- typecheck passes;
-- lint passes;
-- unit/component tests pass;
-- production build passes;
-- critical Playwright flow passes;
-- CI passes from a clean checkout.
+4. **Time-management outcomes**  
+   Aeon & Aguinis and related meta-analytic work on time management, performance, and wellbeing.
 
-## 28. Decisions deliberately deferred
+5. **Self-imposed deadlines / commitment**  
+   Ariely & Wertenbroch (2002), *Procrastination, Deadlines, and Performance: Self-Control by Precommitment*.
 
-The following are not unresolved requirements for this slice; they are explicitly deferred decisions to later subsystem specs:
+6. **Procrastination interventions**  
+   Meta-analytic evidence indicates small-to-moderate overall effects and does not support treating one lightweight productivity mechanic as a cure.
 
-- exact Supabase conflict-resolution policy;
-- detailed guest-to-account merge UX;
-- AI provider/model list;
-- Discipline Score formula;
-- habit streak grace policy beyond the high-level Never Miss Twice concept;
-- push provider/scheduler;
-- ambient sound catalogue;
-- full smart-capture command grammar;
-- multi-day drag-and-drop library;
-- production analytics/telemetry provider.
+7. **MCII / obstacle-response planning**  
+   Used as inspiration for Rescue Flow where supported, while treating newer/smaller studies as preliminary rather than foundational.
 
-Deferral is intentional to avoid designing unused abstractions before their constraints are known.
+Product decisions should be updated if stronger evidence conflicts with these assumptions.
 
-## 29. Self-review notes
+## 34. Self-review
 
-### Placeholder scan
+### Behavioral inheritance check
 
-No implementation-critical `TBD`, `TODO`, or unspecified mandatory behavior remains in the Foundation + Today scope.
+The new design explicitly treats Smart Planner capabilities as required inheritance families rather than optional future ideas.
 
-### Internal consistency
+### Discipline check
 
-- Internal time values use minutes everywhere.
-- Daily scheduling is represented by `TimeBlock`, not by a single field on `WorkItem`.
-- Top priorities are normalized as separate `DailyPriority` records.
-- Guest persistence is IndexedDB; localStorage is not the entity store.
-- Supabase is an extension behind repository interfaces, not a direct dependency of the first slice.
+The product now closes the loop from plan → commitment → execution evidence → miss/recovery → review/adaptation.
+
+### Anti-gamification check
+
+No core behavior depends on XP, virtual rewards, punishment streaks, or opaque engagement scoring.
+
+### Data-truth check
+
+Scheduled work, committed work, completed tasks, and actual focused time remain distinct concepts.
+
+### Human-agency check
+
+Commitment adds friction/history, not absolute lock-in. Emergency override remains possible.
 
 ### Scope check
 
-The original product vision contains multiple independent subsystems. This spec intentionally limits implementation to Foundation + Today and names future subsystem boundaries rather than putting them into one mega-plan.
+The whole product vision remains architectural context, while the first implementation plan is limited to Foundation + Today + Minimal Commitment so it can ship as independently testable software.
 
 ### Data-loss check
 
-The design explicitly rejects silent reset, silent clamping of invalid persisted data, and treating persistence failures as empty data.
+The design rejects silent resets, silent corruption recovery by deletion, and destructive rewriting of commitment history.
 
-## 30. Implementation handoff condition
+## 35. Final acceptance condition for the product direction
 
-Do not create the implementation plan or production code until the user has reviewed this written spec and explicitly approved proceeding from it.
+The rebuild is successful only if both are true:
+
+1. it reaches behavioral parity with the useful Smart Planner capability set, except for explicitly documented supersessions/removals; and
+2. it measurably improves the execution loop by making commitments, actual behavior, misses, recovery, and adaptation visible and actionable.
+
+A cleaner codebase without those two outcomes is not a successful rebuild.
+
+## 36. Implementation handoff condition
+
+Do not create the implementation plan or production code until the user has reviewed this **written v2 spec** and explicitly approved proceeding from it.
