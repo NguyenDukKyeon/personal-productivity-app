@@ -4,7 +4,9 @@ import path from 'path';
 export default defineConfig({
   test: {
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
-    environment: 'node',
+    environment: 'jsdom',
+    setupFiles: ['src/test/setup.ts'],
+    clearMocks: true,
   },
   resolve: {
     alias: {
