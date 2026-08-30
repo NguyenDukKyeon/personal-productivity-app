@@ -113,6 +113,27 @@ it('submits title, estimate and priority to createTask and refreshes the view', 
     priority: 'p1_urgent',
   });
   expect(await screen.findByRole('button', { name: 'Complete Algebra' })).toBeTruthy();
+  expect((screen.getByLabelText('Task title') as HTMLInputElement).value).toBe('');
+});
+
+it('preserves quick capture input and shows the error when createTask fails', async () => {
+  const user = userEvent.setup();
+  const service = createFakeService(view(), {
+    createTask: vi.fn(async () => err('persistence_write_failed', 'IndexedDB write failed.')),
+  });
+
+  await renderToday(service);
+  await user.type(screen.getByLabelText('Task title'), 'Algebra');
+  await user.clear(screen.getByLabelText('Estimated minutes'));
+  await user.type(screen.getByLabelText('Estimated minutes'), '45');
+  await user.selectOptions(screen.getByLabelText('Priority'), 'p1_urgent');
+  await user.click(screen.getByRole('button', { name: 'Add task' }));
+
+  expect(await screen.findByText('IndexedDB write failed.')).toBeTruthy();
+  expect((screen.getByLabelText('Task title') as HTMLInputElement).value).toBe('Algebra');
+  expect((screen.getByLabelText('Estimated minutes') as HTMLInputElement).value).toBe('45');
+  expect((screen.getByLabelText('Priority') as HTMLSelectElement).value).toBe('p1_urgent');
+  expect(screen.queryByRole('button', { name: 'Complete Algebra' })).toBeNull();
 });
 
 it('prevents adding a fourth Top 3 item in the UI', async () => {
