@@ -247,7 +247,7 @@ it('updates actualMinutes from completed sessions only and ignores abandoned tim
   );
   harness.setNow('2026-08-31T08:12:00.000Z');
   unwrap(await harness.service.finishSession(first.id, {}));
-  expect(unwrap(await harness.todayRepository.getWorkItem(item.id)).actualMinutes).toBe(12);
+  expect(unwrap(await harness.todayRepository.getWorkItem(item.id))?.actualMinutes).toBe(12);
 
   harness.setNow('2026-08-31T08:20:00.000Z');
   const second = unwrap(
@@ -260,7 +260,7 @@ it('updates actualMinutes from completed sessions only and ignores abandoned tim
   );
   harness.setNow('2026-08-31T08:50:00.000Z');
   unwrap(await harness.service.abandonSession(second.id));
-  expect(unwrap(await harness.todayRepository.getWorkItem(item.id)).actualMinutes).toBe(12);
+  expect(unwrap(await harness.todayRepository.getWorkItem(item.id))?.actualMinutes).toBe(12);
 
   const completed = unwrap(await harness.service.listCompletedSessions());
   expect(completed).toHaveLength(1);
@@ -291,7 +291,7 @@ it('rolls back completion so the session stays active and actualMinutes stay unc
 
   const view = unwrap(await harness.service.getFocusView());
   expect(view.activeSession?.status).toBe('running');
-  expect(unwrap(await harness.todayRepository.getWorkItem(item.id)).actualMinutes).toBe(0);
+  expect(unwrap(await harness.todayRepository.getWorkItem(item.id))?.actualMinutes).toBe(0);
 });
 
 it('rejects blank distraction text', async () => {
