@@ -94,7 +94,14 @@ export function TimeBlockList({
 
       <ul className="mt-4 space-y-2">
         {view.timeBlocks.map((block) => {
-          const title = (block.workItemId && itemsById.get(block.workItemId)?.title) || 'Untitled';
+          const item = block.workItemId ? itemsById.get(block.workItemId) : undefined;
+          if (block.workItemId && !item) {
+            return null;
+          }
+          const title = item?.title;
+          if (!title) {
+            return null;
+          }
           const edit = edits[block.id] ?? {
             start: minutesToTime(block.startMinute),
             end: minutesToTime(block.endMinute),

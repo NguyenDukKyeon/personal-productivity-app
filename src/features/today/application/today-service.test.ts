@@ -247,6 +247,54 @@ it('updates a time block by repository ID lookup', async () => {
   expect(await repository.getTimeBlock(created.id)).toEqual({ ok: true, value: updated });
 });
 
+it('schedules a backlog task when its first TimeBlock is created', async () => {
+  const { service, repository } = createHarness();
+  const task = unwrap(
+    await service.createTask({ title: 'Algebra', estimatedMinutes: 60, priority: 'p1_urgent' }),
+  );
+  expect(task.status).toBe('backlog');
+
+  unwrap(await service.createTimeBlock({
+    date: DATE,
+    workItemId: task.id,
+    startMinute: 600,
+    endMinute: 660,
+  }));
+
+  expect(unwrap(await repository.getWorkItem(task.id))?.status).toBe('scheduled');
+  expect(unwrap(await service.getTodayView(DATE)).workItems.find((item) => item.id === task.id)?.status).toBe(
+    'scheduled',
+  );
+});
+
+it('returns a scheduled task to backlog when its final relevant TimeBlock is deleted', async () => {
+  const { service, repository } = createHarness();
+  const task = unwrap(
+    await service.createTask({ title: 'Algebra', estimatedMinutes: 60, priority: 'p1_urgent' }),
+  );
+  const first = unwrap(await service.createTimeBlock({
+    date: DATE,
+    workItemId: task.id,
+    startMinute: 600,
+    endMinute: 660,
+  }));
+  const second = unwrap(await service.createTimeBlock({
+    date: DATE,
+    workItemId: task.id,
+    startMinute: 700,
+    endMinute: 760,
+  }));
+
+  unwrap(await service.deleteTimeBlock(first.id));
+  expect(unwrap(await repository.getWorkItem(task.id))?.status).toBe('scheduled');
+
+  unwrap(await service.deleteTimeBlock(second.id));
+  expect(unwrap(await repository.getWorkItem(task.id))?.status).toBe('backlog');
+  expect(unwrap(await service.getTodayView(DATE)).workItems.find((item) => item.id === task.id)?.status).toBe(
+    'backlog',
+  );
+});
+
 it('reopens as scheduled when task has a block on requested date or later', async () => {
   const { service } = createHarness();
   const task = unwrap(await service.createTask({ title: 'Algebra', estimatedMinutes: 60, priority: 'p1_urgent' }));
@@ -264,6 +312,22 @@ it('reopens as scheduled when task has a block on requested date or later', asyn
   expect(reopened.actualMinutes).toBe(0);
 });
 
+it('reopens as scheduled when task has a block on the requested date', async () => {
+  const { service } = createHarness();
+  const task = unwrap(await service.createTask({ title: 'Algebra', estimatedMinutes: 60, priority: 'p1_urgent' }));
+  unwrap(await service.createTimeBlock({
+    date: DATE,
+    workItemId: task.id,
+    startMinute: 600,
+    endMinute: 660,
+  }));
+  unwrap(await service.completeTask(task.id));
+
+  const reopened = unwrap(await service.reopenTask(task.id, DATE));
+  expect(reopened.status).toBe('scheduled');
+  expect(reopened.completedAt).toBeNull();
+});
+
 it('reopens as backlog when no relevant block exists', async () => {
   const { service } = createHarness();
   const task = unwrap(await service.createTask({ title: 'Algebra', estimatedMinutes: 60, priority: 'p1_urgent' }));
@@ -279,4 +343,26 @@ it('reopens as backlog when no relevant block exists', async () => {
   expect(reopened.status).toBe('backlog');
   expect(reopened.completedAt).toBeNull();
   expect(reopened.actualMinutes).toBe(0);
+});
+
+it('rejects orphan time blocks instead of counting them as scheduled Untitled work', async () => {
+  const { service, repository } = createHarness();
+  unwrap(await service.setDailyCapacity(DATE, 300));
+  repository.timeBlocks.set('orphan', {
+    id: 'orphan',
+    date: DATE,
+    workItemId: 'missing',
+    habitId: null,
+    startMinute: 600,
+    endMinute: 720,
+    createdAt: NOW_ISO,
+    updatedAt: NOW_ISO,
+  });
+
+  const view = await service.getTodayView(DATE);
+  expect(view.ok).toBe(false);
+  if (!view.ok) {
+    expect(view.code).toBe('unknown_entity');
+    expect(view.message.toLowerCase()).not.toContain('untitled');
+  }
 });

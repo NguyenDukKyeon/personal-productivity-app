@@ -5,11 +5,13 @@ import {
 } from '@/domain/commitments/commitment';
 import { buildPriorities } from '@/domain/daily-plans/priorities';
 import type { DailyPlan, DailyPriority } from '@/domain/daily-plans/daily-plan';
+import { toLocalDateKey } from '@/domain/shared/local-date';
 import { err, ok, type Result } from '@/domain/shared/result';
 import { detectOverlaps, validateTimeBlock, type TimeBlock } from '@/domain/time-blocks/time-block';
 import {
   completeWorkItem,
   reopenWorkItem,
+  validateWorkItem,
   type WorkItem,
   type WorkItemPriority,
 } from '@/domain/work-items/work-item';
@@ -115,6 +117,31 @@ export function createTodayService(deps: {
     );
   }
 
+  function hasRelevantBlock(blocks: TimeBlock[], date: string): boolean {
+    return blocks.some((block) => block.date >= date);
+  }
+
+  async function syncScheduleStatus(item: WorkItem): Promise<Result<WorkItem>> {
+    if (item.status === 'completed' || item.status === 'in_progress') {
+      return ok(item);
+    }
+
+    const blocks = await repository.listTimeBlocksForWorkItem(item.id);
+    if (!blocks.ok) return blocks;
+
+    const nextStatus = hasRelevantBlock(blocks.value, toLocalDateKey(now())) ? 'scheduled' : 'backlog';
+    if (item.status === nextStatus) return ok(item);
+
+    const updated: WorkItem = {
+      ...item,
+      status: nextStatus,
+      updatedAt: nowIso(),
+    };
+    const saved = await repository.saveWorkItem(updated);
+    if (!saved.ok) return saved;
+    return ok(updated);
+  }
+
   const service: TodayService = {
     async getTodayView(date) {
       const planResult = await loadPlan(date);
@@ -133,14 +160,32 @@ export function createTodayService(deps: {
       if (!commitmentResult.ok) return commitmentResult;
 
       const workItemsById = new Map(workItemsResult.value.map((item) => [item.id, item]));
+      const timeBlocks = sortTimeBlocks(timeBlocksResult.value);
+
+      for (const block of timeBlocks) {
+        if (block.workItemId && !workItemsById.has(block.workItemId)) {
+          return err('unknown_entity', 'A time block refers to an unknown work item.');
+        }
+      }
+
+      const scheduledWorkItemIds = new Set(
+        timeBlocks.flatMap((block) => (block.workItemId ? [block.workItemId] : [])),
+      );
+      const workItems = workItemsResult.value.map((item) => {
+        if (item.status === 'backlog' && scheduledWorkItemIds.has(item.id)) {
+          return { ...item, status: 'scheduled' as const };
+        }
+        return item;
+      });
+      const displayedById = new Map(workItems.map((item) => [item.id, item]));
+
       const priorities: TodayViewModel['priorities'] = [];
       for (const priority of [...prioritiesResult.value].sort((a, b) => a.rank - b.rank)) {
-        const item = workItemsById.get(priority.workItemId);
+        const item = displayedById.get(priority.workItemId);
         if (!item) return err('unknown_entity', 'A priority refers to an unknown work item.');
         priorities.push({ rank: priority.rank, item });
       }
 
-      const timeBlocks = sortTimeBlocks(timeBlocksResult.value);
       const scheduledMinutes = timeBlocks.reduce(
         (sum, block) => sum + block.endMinute - block.startMinute,
         0,
@@ -162,7 +207,7 @@ export function createTodayService(deps: {
       return ok({
         date,
         plan: planResult.value,
-        workItems: workItemsResult.value,
+        workItems,
         priorities,
         timeBlocks,
         scheduledMinutes: capacity.scheduledMinutes,
@@ -177,10 +222,12 @@ export function createTodayService(deps: {
 
     async createTask(input) {
       const title = input.title.trim();
-      if (!title) return err('invalid_title', 'Task title is required.');
-      if (!Number.isInteger(input.estimatedMinutes) || input.estimatedMinutes <= 0) {
-        return err('invalid_estimate', 'Estimated minutes must be a positive integer.');
-      }
+      const validated = validateWorkItem({
+        title,
+        estimatedMinutes: input.estimatedMinutes,
+        actualMinutes: 0,
+      });
+      if (!validated.ok) return validated;
 
       const timestamp = nowIso();
       const item: WorkItem = {
@@ -256,6 +303,9 @@ export function createTodayService(deps: {
       };
       const saved = await repository.saveTimeBlock(block);
       if (!saved.ok) return saved;
+
+      const synced = await syncScheduleStatus(item.value);
+      if (!synced.ok) return synced;
       return ok(block);
     },
 
@@ -284,7 +334,20 @@ export function createTodayService(deps: {
     },
 
     async deleteTimeBlock(id) {
-      return repository.removeTimeBlock(id);
+      const existing = await repository.getTimeBlock(id);
+      if (!existing.ok) return existing;
+      if (!existing.value) return ok(undefined);
+
+      const removed = await repository.removeTimeBlock(id);
+      if (!removed.ok) return removed;
+
+      if (!existing.value.workItemId) return ok(undefined);
+      const item = await repository.getWorkItem(existing.value.workItemId);
+      if (!item.ok) return item;
+      if (!item.value) return ok(undefined);
+      const synced = await syncScheduleStatus(item.value);
+      if (!synced.ok) return synced;
+      return ok(undefined);
     },
 
     async completeTask(workItemId) {
@@ -301,8 +364,7 @@ export function createTodayService(deps: {
       if (!item.ok) return item;
       const blocks = await repository.listTimeBlocksForWorkItem(workItemId);
       if (!blocks.ok) return blocks;
-      const hasRelevantBlock = blocks.value.some((block) => block.date >= date);
-      const reopened = reopenWorkItem(item.value, hasRelevantBlock, nowIso());
+      const reopened = reopenWorkItem(item.value, hasRelevantBlock(blocks.value, date), nowIso());
       const saved = await repository.saveWorkItem(reopened);
       if (!saved.ok) return saved;
       return ok(reopened);
