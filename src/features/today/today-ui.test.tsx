@@ -283,3 +283,29 @@ it('keeps previous view and shows error when persistence mutation fails', async 
   expect(screen.getByRole('button', { name: 'Complete Algebra' })).toBeTruthy();
   expect(screen.getByText('Available 300 min')).toBeTruthy();
 });
+
+it('links Start focus with the work item and first today time block', async () => {
+  const algebra = workItem({ id: 'w1', title: 'Algebra' });
+  const service = createFakeService(
+    view({
+      workItems: [algebra],
+      timeBlocks: [
+        {
+          id: 'tb1',
+          date: DATE,
+          workItemId: 'w1',
+          habitId: null,
+          startMinute: 600,
+          endMinute: 660,
+          createdAt: NOW,
+          updatedAt: NOW,
+        },
+      ],
+    }),
+  );
+
+  await renderToday(service);
+  expect(screen.getByRole('link', { name: 'Start focus Algebra' }).getAttribute('href')).toBe(
+    '/focus?workItemId=w1&timeBlockId=tb1',
+  );
+});
