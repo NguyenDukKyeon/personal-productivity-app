@@ -19,6 +19,6 @@ jobs:
           path: package-lock.json
           if-no-files-found: error
       - run: npm run typecheck
-      - run: npm run lint
       - run: npm run test
       - run: npm run build
+      - run: npm run lint
