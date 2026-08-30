@@ -38,7 +38,7 @@ export function elapsedFocusMs(session: FocusTimingInput, nowMs: number): number
 }
 
 export function remainingFocusMs(session: FocusTimingInput, nowMs: number): number | null {
-  if (session.mode !== 'countdown') return null;
+  if (session.mode !== 'countdown' || session.plannedDurationMinutes == null) return null;
   if (!Number.isInteger(session.plannedDurationMinutes) || session.plannedDurationMinutes <= 0) {
     return null;
   }
