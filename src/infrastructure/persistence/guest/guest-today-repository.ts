@@ -13,6 +13,7 @@ import { openGuestTodayDb, type GuestTodayDB } from './guest-db';
 export interface GuestTodayRepositoryOptions {
   databaseName?: string;
   beforePriorityCommit?: () => void;
+  beforeSchedulingWorkItemWrite?: () => void;
 }
 
 const CORRUPT_RECORD_MESSAGE = 'Stored data is invalid and was left untouched.';
@@ -301,11 +302,49 @@ class GuestTodayRepository implements TodayRepository {
     }
   }
 
+  async saveTimeBlockWithWorkItem(block: TimeBlock, workItem: WorkItem): Promise<Result<void>> {
+    const tx = this.db.transaction(['timeBlocks', 'workItems'], 'readwrite');
+    try {
+      await tx.objectStore('timeBlocks').put(block);
+      try {
+        this.options.beforeSchedulingWorkItemWrite?.();
+      } catch {
+        await abortQuietly(tx);
+        return writeFailed();
+      }
+      await tx.objectStore('workItems').put(workItem);
+      await tx.done;
+      return ok(undefined);
+    } catch {
+      await abortQuietly(tx);
+      return writeFailed();
+    }
+  }
+
   async removeTimeBlock(id: string): Promise<Result<void>> {
     try {
       await this.db.delete('timeBlocks', id);
       return ok(undefined);
     } catch {
+      return writeFailed();
+    }
+  }
+
+  async removeTimeBlockWithWorkItem(id: string, workItem: WorkItem): Promise<Result<void>> {
+    const tx = this.db.transaction(['timeBlocks', 'workItems'], 'readwrite');
+    try {
+      await tx.objectStore('timeBlocks').delete(id);
+      try {
+        this.options.beforeSchedulingWorkItemWrite?.();
+      } catch {
+        await abortQuietly(tx);
+        return writeFailed();
+      }
+      await tx.objectStore('workItems').put(workItem);
+      await tx.done;
+      return ok(undefined);
+    } catch {
+      await abortQuietly(tx);
       return writeFailed();
     }
   }

@@ -121,25 +121,21 @@ export function createTodayService(deps: {
     return blocks.some((block) => block.date >= date);
   }
 
-  async function syncScheduleStatus(item: WorkItem): Promise<Result<WorkItem>> {
+  function nextScheduleStatus(item: WorkItem, blocks: TimeBlock[]): WorkItem['status'] {
     if (item.status === 'completed' || item.status === 'in_progress') {
-      return ok(item);
+      return item.status;
     }
+    return hasRelevantBlock(blocks, toLocalDateKey(now())) ? 'scheduled' : 'backlog';
+  }
 
-    const blocks = await repository.listTimeBlocksForWorkItem(item.id);
-    if (!blocks.ok) return blocks;
-
-    const nextStatus = hasRelevantBlock(blocks.value, toLocalDateKey(now())) ? 'scheduled' : 'backlog';
-    if (item.status === nextStatus) return ok(item);
-
-    const updated: WorkItem = {
+  function withScheduleStatus(item: WorkItem, blocks: TimeBlock[]): WorkItem {
+    const nextStatus = nextScheduleStatus(item, blocks);
+    if (item.status === nextStatus) return item;
+    return {
       ...item,
       status: nextStatus,
       updatedAt: nowIso(),
     };
-    const saved = await repository.saveWorkItem(updated);
-    if (!saved.ok) return saved;
-    return ok(updated);
   }
 
   const service: TodayService = {
@@ -301,11 +297,25 @@ export function createTodayService(deps: {
         createdAt: timestamp,
         updatedAt: timestamp,
       };
-      const saved = await repository.saveTimeBlock(block);
-      if (!saved.ok) return saved;
 
-      const synced = await syncScheduleStatus(item.value);
-      if (!synced.ok) return synced;
+      if (item.value.status === 'completed' || item.value.status === 'in_progress') {
+        const saved = await repository.saveTimeBlock(block);
+        if (!saved.ok) return saved;
+        return ok(block);
+      }
+
+      const blocks = await repository.listTimeBlocksForWorkItem(item.value.id);
+      if (!blocks.ok) return blocks;
+
+      const scheduledItem = withScheduleStatus(item.value, [...blocks.value, block]);
+      if (scheduledItem === item.value) {
+        const saved = await repository.saveTimeBlock(block);
+        if (!saved.ok) return saved;
+        return ok(block);
+      }
+
+      const saved = await repository.saveTimeBlockWithWorkItem(block, scheduledItem);
+      if (!saved.ok) return saved;
       return ok(block);
     },
 
@@ -338,16 +348,26 @@ export function createTodayService(deps: {
       if (!existing.ok) return existing;
       if (!existing.value) return ok(undefined);
 
-      const removed = await repository.removeTimeBlock(id);
-      if (!removed.ok) return removed;
+      if (!existing.value.workItemId) {
+        return repository.removeTimeBlock(id);
+      }
 
-      if (!existing.value.workItemId) return ok(undefined);
       const item = await repository.getWorkItem(existing.value.workItemId);
       if (!item.ok) return item;
-      if (!item.value) return ok(undefined);
-      const synced = await syncScheduleStatus(item.value);
-      if (!synced.ok) return synced;
-      return ok(undefined);
+      if (!item.value || item.value.status === 'completed' || item.value.status === 'in_progress') {
+        return repository.removeTimeBlock(id);
+      }
+
+      const blocks = await repository.listTimeBlocksForWorkItem(item.value.id);
+      if (!blocks.ok) return blocks;
+
+      const remaining = blocks.value.filter((block) => block.id !== id);
+      const scheduledItem = withScheduleStatus(item.value, remaining);
+      if (scheduledItem === item.value) {
+        return repository.removeTimeBlock(id);
+      }
+
+      return repository.removeTimeBlockWithWorkItem(id, scheduledItem);
     },
 
     async completeTask(workItemId) {

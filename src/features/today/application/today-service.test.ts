@@ -5,6 +5,7 @@ import { err, ok, type Result } from '@/domain/shared/result';
 import type { TimeBlock } from '@/domain/time-blocks/time-block';
 import type { WorkItem } from '@/domain/work-items/work-item';
 import type { TodayRepository } from '@/infrastructure/persistence/contracts/today-repository';
+import { createGuestTodayRepository } from '@/infrastructure/persistence/guest/guest-today-repository';
 import { createTodayService } from './today-service';
 
 const DATE = '2026-08-30';
@@ -66,8 +67,20 @@ class InMemoryTodayRepository implements TodayRepository {
     return ok(undefined);
   }
 
+  async saveTimeBlockWithWorkItem(block: TimeBlock, item: WorkItem): Promise<Result<void>> {
+    this.timeBlocks.set(block.id, block);
+    this.workItems.set(item.id, item);
+    return ok(undefined);
+  }
+
   async removeTimeBlock(id: string): Promise<Result<void>> {
     this.timeBlocks.delete(id);
+    return ok(undefined);
+  }
+
+  async removeTimeBlockWithWorkItem(id: string, item: WorkItem): Promise<Result<void>> {
+    this.timeBlocks.delete(id);
+    this.workItems.set(item.id, item);
     return ok(undefined);
   }
 
@@ -365,4 +378,82 @@ it('rejects orphan time blocks instead of counting them as scheduled Untitled wo
     expect(view.code).toBe('unknown_entity');
     expect(view.message.toLowerCase()).not.toContain('untitled');
   }
+});
+
+it('rolls back TimeBlock create when WorkItem status write fails atomically', async () => {
+  const name = `personal-productivity-test-${crypto.randomUUID()}`;
+  const repository = await createGuestTodayRepository({
+    databaseName: name,
+    beforeSchedulingWorkItemWrite: () => {
+      throw new Error('forced work item write failure');
+    },
+  });
+  let seq = 0;
+  const service = createTodayService({
+    repository,
+    now: () => NOW,
+    newId: () => `id-${++seq}`,
+  });
+
+  const task = unwrap(
+    await service.createTask({ title: 'Algebra', estimatedMinutes: 60, priority: 'p1_urgent' }),
+  );
+  expect(task.status).toBe('backlog');
+
+  const created = await service.createTimeBlock({
+    date: DATE,
+    workItemId: task.id,
+    startMinute: 600,
+    endMinute: 660,
+  });
+  expect(created.ok).toBe(false);
+  if (!created.ok) expect(created.code).toBe('persistence_write_failed');
+
+  const verify = await createGuestTodayRepository({ databaseName: name });
+  expect(await verify.listTimeBlocks(DATE)).toEqual({ ok: true, value: [] });
+  expect(unwrap(await verify.getWorkItem(task.id))?.status).toBe('backlog');
+});
+
+it('rolls back TimeBlock delete when WorkItem status write fails atomically', async () => {
+  const name = `personal-productivity-test-${crypto.randomUUID()}`;
+  const stable = await createGuestTodayRepository({ databaseName: name });
+  let seq = 0;
+  const service = createTodayService({
+    repository: stable,
+    now: () => NOW,
+    newId: () => `id-${++seq}`,
+  });
+
+  const task = unwrap(
+    await service.createTask({ title: 'Algebra', estimatedMinutes: 60, priority: 'p1_urgent' }),
+  );
+  const block = unwrap(
+    await service.createTimeBlock({
+      date: DATE,
+      workItemId: task.id,
+      startMinute: 600,
+      endMinute: 660,
+    }),
+  );
+  expect(unwrap(await stable.getWorkItem(task.id))?.status).toBe('scheduled');
+
+  const failing = await createGuestTodayRepository({
+    databaseName: name,
+    beforeSchedulingWorkItemWrite: () => {
+      throw new Error('forced work item write failure');
+    },
+  });
+  const failingService = createTodayService({
+    repository: failing,
+    now: () => NOW,
+    newId: () => `fail-${++seq}`,
+  });
+
+  const deleted = await failingService.deleteTimeBlock(block.id);
+  expect(deleted.ok).toBe(false);
+  if (!deleted.ok) expect(deleted.code).toBe('persistence_write_failed');
+
+  const verify = await createGuestTodayRepository({ databaseName: name });
+  expect(await verify.getTimeBlock(block.id)).toEqual({ ok: true, value: block });
+  expect(unwrap(await verify.getWorkItem(task.id))?.status).toBe('scheduled');
 });

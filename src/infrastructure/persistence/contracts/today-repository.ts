@@ -16,7 +16,9 @@ export interface TodayRepository {
   getTimeBlock(id: string): Promise<Result<TimeBlock | null>>;
   listTimeBlocksForWorkItem(workItemId: string): Promise<Result<TimeBlock[]>>;
   saveTimeBlock(block: TimeBlock): Promise<Result<void>>;
+  saveTimeBlockWithWorkItem(block: TimeBlock, workItem: WorkItem): Promise<Result<void>>;
   removeTimeBlock(id: string): Promise<Result<void>>;
+  removeTimeBlockWithWorkItem(id: string, workItem: WorkItem): Promise<Result<void>>;
   getCommitment(date: string): Promise<Result<DailyCommitmentSnapshot | null>>;
   saveCommitment(snapshot: DailyCommitmentSnapshot): Promise<Result<void>>;
 }
