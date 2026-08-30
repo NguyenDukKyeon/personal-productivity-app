@@ -4,6 +4,7 @@ import type { DailyCommitmentSnapshot } from '@/domain/commitments/commitment';
 import type { DailyPlan, DailyPriority } from '@/domain/daily-plans/daily-plan';
 import type { TimeBlock } from '@/domain/time-blocks/time-block';
 import type { WorkItem } from '@/domain/work-items/work-item';
+import { GUEST_DB_VERSION } from './guest-db';
 import { createGuestTodayRepository } from './guest-today-repository';
 
 function dbName(): string {
@@ -42,13 +43,13 @@ const commitment: DailyCommitmentSnapshot = {
 };
 
 async function putRaw(name: string, store: string, value: unknown): Promise<void> {
-  const rawDb = await openDB(name, 1);
+  const rawDb = await openDB(name, GUEST_DB_VERSION);
   await rawDb.put(store, value);
   rawDb.close();
 }
 
 async function getRaw(name: string, store: string, key: string): Promise<unknown> {
-  const rawDb = await openDB(name, 1);
+  const rawDb = await openDB(name, GUEST_DB_VERSION);
   const row = await rawDb.get(store, key);
   rawDb.close();
   return row;

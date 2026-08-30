@@ -1,7 +1,7 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 
 export const GUEST_DB_NAME = 'personal-productivity-guest';
-export const GUEST_DB_VERSION = 1;
+export const GUEST_DB_VERSION = 2;
 
 export interface GuestTodayDB extends DBSchema {
   workItems: {
@@ -31,6 +31,16 @@ export interface GuestTodayDB extends DBSchema {
   meta: {
     key: string;
     value: unknown;
+  };
+  focusSessions: {
+    key: string;
+    value: unknown;
+    indexes: { workItemId: string; status: string };
+  };
+  distractions: {
+    key: string;
+    value: unknown;
+    indexes: { focusSessionId: string };
   };
 }
 
@@ -66,6 +76,17 @@ export async function openGuestTodayDb(
 
       if (!db.objectStoreNames.contains('meta')) {
         db.createObjectStore('meta', { keyPath: 'key' });
+      }
+
+      if (!db.objectStoreNames.contains('focusSessions')) {
+        const store = db.createObjectStore('focusSessions', { keyPath: 'id' });
+        store.createIndex('workItemId', 'workItemId');
+        store.createIndex('status', 'status');
+      }
+
+      if (!db.objectStoreNames.contains('distractions')) {
+        const store = db.createObjectStore('distractions', { keyPath: 'id' });
+        store.createIndex('focusSessionId', 'focusSessionId');
       }
     },
   });

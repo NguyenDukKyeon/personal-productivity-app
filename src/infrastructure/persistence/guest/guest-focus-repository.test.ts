@@ -170,6 +170,8 @@ it('upgrades a v1 guest database without deleting today stores', async () => {
   expect(await focus.saveSession(runningSession)).toEqual({ ok: true, value: undefined });
   expect(await focus.getSession(runningSession.id)).toEqual({ ok: true, value: runningSession });
 });
+
+it('writes session and work item actual minutes in one transaction', async () => {
   const name = dbName();
   const today = await createGuestTodayRepository({ databaseName: name });
   expect(await today.saveWorkItem(workItem)).toEqual({ ok: true, value: undefined });
