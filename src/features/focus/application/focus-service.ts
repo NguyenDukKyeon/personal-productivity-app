@@ -101,31 +101,32 @@ export function createFocusService(deps: {
 
       const activeSession = activeResult.value;
       const nowMs = now().getTime();
-      let distractions: Distraction[] = [];
-      let workItem: WorkItem | null = null;
-      let timeBlock: TimeBlock | null = null;
-
-      if (activeSession) {
-        const distractionResult = await focusRepository.listDistractions(activeSession.id);
-        if (!distractionResult.ok) return distractionResult;
-        distractions = distractionResult.value;
-
-        if (activeSession.workItemId) {
-          const itemResult = await todayRepository.getWorkItem(activeSession.workItemId);
-          if (!itemResult.ok) return itemResult;
-          workItem = itemResult.value;
-        }
-        if (activeSession.timeBlockId) {
-          const blockResult = await todayRepository.getTimeBlock(activeSession.timeBlockId);
-          if (!blockResult.ok) return blockResult;
-          timeBlock = blockResult.value;
-        }
-      }
-
       const lastFinalizedSession =
         sessionsResult.value
           .filter((session) => session.status === 'completed' || session.status === 'abandoned')
           .sort((a, b) => (b.endedAt ?? '').localeCompare(a.endedAt ?? ''))[0] ?? null;
+
+      const evidenceSession = activeSession ?? lastFinalizedSession;
+      let distractions: Distraction[] = [];
+      let workItem: WorkItem | null = null;
+      let timeBlock: TimeBlock | null = null;
+
+      if (evidenceSession) {
+        const distractionResult = await focusRepository.listDistractions(evidenceSession.id);
+        if (!distractionResult.ok) return distractionResult;
+        distractions = distractionResult.value;
+
+        if (evidenceSession.workItemId) {
+          const itemResult = await todayRepository.getWorkItem(evidenceSession.workItemId);
+          if (!itemResult.ok) return itemResult;
+          workItem = itemResult.value;
+        }
+        if (evidenceSession.timeBlockId) {
+          const blockResult = await todayRepository.getTimeBlock(evidenceSession.timeBlockId);
+          if (!blockResult.ok) return blockResult;
+          timeBlock = blockResult.value;
+        }
+      }
 
       return ok({
         activeSession,

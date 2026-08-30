@@ -13,16 +13,46 @@ import {
 import { cn } from '@/lib/utils';
 
 const laterItems = [
-  { name: 'Focus', icon: Flame },
   { name: 'Habits', icon: CheckCircle2 },
   { name: 'Planner', icon: CalendarDays },
   { name: 'Projects', icon: FolderGit2 },
   { name: 'Review', icon: BarChart3 },
 ] as const;
 
+function NavLink({
+  href,
+  active,
+  icon: Icon,
+  children,
+}: {
+  href: string;
+  active: boolean;
+  icon: typeof Zap;
+  children: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className={cn(
+        'relative flex items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-semibold',
+        active
+          ? 'bg-slate-100 text-indigo-600 dark:bg-[#161b26] dark:text-indigo-400'
+          : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-[#121620]',
+      )}
+    >
+      {active ? (
+        <span className="absolute bottom-2 left-0 top-2 w-1 rounded-r-full bg-indigo-600 dark:bg-indigo-500" />
+      ) : null}
+      <Icon className="h-4 w-4" />
+      {children}
+    </Link>
+  );
+}
+
 export function Sidebar({ className }: { className?: string }) {
   const pathname = usePathname();
   const todayActive = pathname === '/today' || pathname === '/';
+  const focusActive = pathname === '/focus' || pathname.startsWith('/focus');
 
   return (
     <aside
@@ -45,21 +75,12 @@ export function Sidebar({ className }: { className?: string }) {
         <p className="px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">
           Workstation
         </p>
-        <Link
-          href="/today"
-          className={cn(
-            'relative flex items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-semibold',
-            todayActive
-              ? 'bg-slate-100 text-indigo-600 dark:bg-[#161b26] dark:text-indigo-400'
-              : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-[#121620]',
-          )}
-        >
-          {todayActive ? (
-            <span className="absolute bottom-2 left-0 top-2 w-1 rounded-r-full bg-indigo-600 dark:bg-indigo-500" />
-          ) : null}
-          <Zap className="h-4 w-4" />
+        <NavLink href="/today" active={todayActive} icon={Zap}>
           Today
-        </Link>
+        </NavLink>
+        <NavLink href="/focus" active={focusActive} icon={Flame}>
+          Focus
+        </NavLink>
 
         {laterItems.map((item) => {
           const Icon = item.icon;
