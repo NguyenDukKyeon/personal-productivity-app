@@ -6,17 +6,17 @@ This register prevents the rebuild from silently losing useful Smart Planner beh
 
 | Capability | Status | Evidence / destination |
 | --- | --- | --- |
-| Daily capacity 0–16h | NOT YET IMPLEMENTED | Foundation + Today |
-| Flexible planning / scheduling | NOT YET IMPLEMENTED | Today TimeBlock, then multi-day Planner |
-| Schedule forecasting | NOT YET IMPLEMENTED | Projects / Planner |
+| Daily capacity 0–16h | PRESERVED | `src/domain/capacity` + Today UI |
+| Flexible planning / scheduling | PRESERVED | Single-day `TimeBlock`; multi-day planner remains NOT YET IMPLEMENTED |
+| Schedule forecasting | NOT YET IMPLEMENTED | Projects/Planner |
 | Focus timer / preferences / transitions | NOT YET IMPLEMENTED | Focus Station |
 | Habit tracking | NOT YET IMPLEMENTED | Habits & Routines |
-| Projects / roadmaps / lesson placement | NOT YET IMPLEMENTED | Projects / Planner |
-| Progress analytics | NOT YET IMPLEMENTED | Review / Analytics |
+| Projects / roadmaps / lesson placement | NOT YET IMPLEMENTED | Projects/Planner |
+| Progress analytics | NOT YET IMPLEMENTED | Review/Analytics |
 | Weekly metrics / review | NOT YET IMPLEMENTED | Shutdown + Weekly Review |
-| PWA / reminders / Web Push | NOT YET IMPLEMENTED | PWA / Push |
-| Backup / storage safety / migration | NOT YET IMPLEMENTED | IndexedDB safety first; legacy import later |
-| Daily commitment snapshot | NOT YET IMPLEMENTED | Foundation + Today discipline upgrade |
+| PWA / reminders / Web Push | NOT YET IMPLEMENTED | PWA/Push |
+| Backup / storage safety / migration | SUPERSEDED | Validated IndexedDB guest persistence now; legacy import/export remains NOT YET IMPLEMENTED |
+| Daily commitment snapshot | SUPERSEDED | Immutable snapshot + divergence |
 
 ## Rules
 

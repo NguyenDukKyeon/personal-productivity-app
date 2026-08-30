@@ -10,17 +10,6 @@ export function useTodayController(service: TodayService, date: string) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    const result = await service.getTodayView(date);
-    if (result.ok) {
-      setView(result.value);
-      setError(null);
-    } else {
-      setError(result.message);
-    }
-    return result;
-  }, [date, service]);
-
   useEffect(() => {
     let cancelled = false;
     setIsLoading(true);
