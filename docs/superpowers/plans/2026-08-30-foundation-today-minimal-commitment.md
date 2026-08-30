@@ -2,45 +2,45 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Rebuild the first production slice of Smart Planner Reborn so a guest can realistically plan today, commit the plan, execute task state changes, see divergence from the commitment, and reload without losing or silently corrupting data.
+**Goal:** Rebuild the first production slice of Smart Planner Reborn so a guest can plan today realistically, commit the plan, change/complete work truthfully, see divergence from the commitment, and reload without losing or silently corrupting data.
 
-**Architecture:** Keep the current Next.js 15 shell only as temporary scaffolding while new code is introduced behind pure domain modules, a storage-independent application service, and an IndexedDB guest repository. The existing Gemini-generated Zustand/localStorage application is treated as a prototype: it remains in place only until the replacement Today flow is green, then is removed from the canonical runtime while its product ideas remain represented in the Smart Planner behavior-parity register.
+**Architecture:** Introduce the replacement alongside the current Gemini-generated prototype: pure domain modules → storage-independent Today application service → validated IndexedDB guest repository → focused Today UI. Do not delete the prototype until the replacement Today flow passes its unit/component/build gates. Then remove prototype runtime code while preserving Smart Planner requirements in a behavior-parity register.
 
-**Tech Stack:** Next.js 15 App Router, React 19, TypeScript strict mode, Tailwind CSS v4, Lucide, Zod, IndexedDB via `idb`, Vitest, React Testing Library, fake-indexeddb, Playwright, ESLint.
+**Tech Stack:** Next.js 15 App Router, React 19, TypeScript strict mode, Tailwind CSS v4, Lucide, Zod, `idb`, Vitest, React Testing Library, fake-indexeddb, Playwright, ESLint.
 
 **Spec:** `docs/superpowers/specs/2026-08-30-personal-productivity-foundation-today-design.md`
 
 ## Global Constraints
 
 - Product direction is **Behavior-Preserving Rebuild + Discipline Upgrade**.
-- Smart Planner is the behavioral baseline; inherited capabilities may not disappear silently.
+- Smart Planner is the behavioral baseline; inherited capability families may not disappear silently.
 - First implementation scope is **Foundation + Today + Minimal Commitment** only.
 - Canonical duration unit is integer minutes.
-- Daily date keys are local calendar dates; do not use `new Date().toISOString().slice(0, 10)` for a local day.
-- Capacity range is 0–960 minutes with 30-minute UI steps; values above 720 minutes show a non-blocking caution.
-- Top priorities are normalized and limited to ranks 1–3.
-- Scheduling uses `TimeBlock`; do not reintroduce `scheduledDate` / `scheduledTimeStart` as the canonical scheduling model.
-- Scheduled work, committed work, task completion, and actual focused work are distinct concepts.
-- Product components must not call localStorage, IndexedDB, or Supabase directly.
-- Guest entity persistence uses IndexedDB with validation at the boundary.
-- Persistence failure is never interpreted as an empty dataset and corrupt data is never auto-reset.
-- Significant changes after `Commit Today` must be visible as divergence; commitment history is immutable.
-- No Supabase, AI provider SDK, audio engine, charting library, or drag-and-drop dependency is required for this slice.
-- No XP, virtual currency, punishment streaks, confetti-as-progress, or opaque discipline score.
-- No production feature behavior is written before its failing test, except configuration/generated files where TDD is not meaningful.
-- Quality gates are `bun run typecheck`, `bun run lint`, `bun run test`, `bun run build`, `bun run e2e`. This plan uses `bun run test` rather than the spec's shorthand `bun test` so the configured Vitest package script is unambiguous.
+- Daily date keys are local calendar dates; never use `new Date().toISOString().slice(0, 10)` as a local-day helper.
+- Capacity is 0–960 minutes in 30-minute increments; capacity >720 minutes shows a non-blocking caution.
+- Top priorities are normalized, unique, ordered and limited to ranks 1–3.
+- Scheduling uses `TimeBlock`; do not make `scheduledDate` / `scheduledTimeStart` canonical again.
+- Scheduled work, committed work, completed tasks and actual focused work are distinct concepts.
+- Product components do not call localStorage, IndexedDB or Supabase directly.
+- Guest entity persistence uses IndexedDB and validates every loaded record.
+- Persistence failure is never interpreted as an empty dataset; corrupt records are left untouched.
+- `Commit Today` writes one immutable snapshot for a date. Later plan edits are allowed but must surface divergence.
+- No Supabase, AI provider SDK, audio engine, charting library or drag-and-drop library is needed by the final first-slice runtime.
+- No XP, virtual currency, punishment streaks, completion confetti or opaque discipline score.
+- No production feature behavior before a failing test, except config/generated files where TDD is not meaningful.
+- Quality gates: `bun run typecheck`, `bun run lint`, `bun run test`, `bun run build`, `bun run e2e`. Use `bun run test` so Vitest is invoked explicitly.
 
 ---
 
 ## Current Repository Reality
 
-The branch starts from a Gemini-generated prototype. Important facts the implementer must respect:
+The implementation branch starts from a prototype that is useful only as visual/product evidence:
 
-- `src/lib/store/useAppStore.ts` is a large persisted Zustand store that owns tasks, projects, habits, focus, plans, settings, migration and timers.
-- `src/app/(dashboard)/today/page.tsx` directly reads that store and composes capacity, Top 3, spaced reviews, habits and audio-backed interactions.
-- `src/types/index.ts` still embeds `scheduledDate`, `scheduledTimeStart`, `capacityHours`, and `top3ItemIds` in the old data model.
-- Out-of-scope routes already exist for Focus, Habits, Planner, Projects, Review, Roadmap, Settings and AI APIs. Their presence does **not** mean those implementations satisfy Smart Planner parity.
-- Existing prototype code must remain available in Git history, but it must not dictate the new domain or persistence architecture.
+- `src/lib/store/useAppStore.ts` is a ~30 KB persisted Zustand store owning tasks, projects, habits, focus, plans, settings, migration and timer behavior.
+- `src/app/(dashboard)/today/page.tsx` directly consumes that store plus audio and out-of-scope habit/review components.
+- `src/types/index.ts` embeds obsolete canonical fields such as `scheduledDate`, `scheduledTimeStart`, `capacityHours` and `top3ItemIds`.
+- Prototype routes already exist for Focus, Habits, Planner, Projects, Review, Roadmap, Settings and AI APIs. Their existence is not parity evidence.
+- Git history preserves prototype code; the new runtime does not need to preserve its technical structure.
 
 ## Target File Map
 
@@ -49,6 +49,7 @@ src/
 ├── app/
 │   ├── (dashboard)/
 │   │   ├── layout.tsx
+│   │   ├── page.tsx
 │   │   └── today/page.tsx
 │   ├── globals.css
 │   └── layout.tsx
@@ -62,69 +63,54 @@ src/
 │       ├── Input.tsx
 │       └── Select.tsx
 ├── domain/
-│   ├── shared/
-│   │   ├── result.ts
-│   │   └── local-date.ts
-│   ├── capacity/
-│   │   ├── capacity.ts
-│   │   └── capacity.test.ts
-│   ├── work-items/
-│   │   ├── work-item.ts
-│   │   └── work-item.test.ts
-│   ├── daily-plans/
-│   │   ├── daily-plan.ts
-│   │   ├── priorities.ts
-│   │   └── priorities.test.ts
-│   ├── time-blocks/
-│   │   ├── time-block.ts
-│   │   └── time-block.test.ts
-│   └── commitments/
-│       ├── commitment.ts
-│       └── commitment.test.ts
-├── features/
-│   └── today/
-│       ├── application/
-│       │   ├── today-service.ts
-│       │   └── today-service.test.ts
-│       ├── components/
-│       │   ├── TodayScreen.tsx
-│       │   ├── CapacityPanel.tsx
-│       │   ├── QuickCaptureForm.tsx
-│       │   ├── PriorityList.tsx
-│       │   ├── TaskList.tsx
-│       │   ├── TimeBlockList.tsx
-│       │   └── CommitmentPanel.tsx
-│       ├── hooks/
-│       │   └── useTodayController.ts
-│       └── today-ui.test.tsx
-├── infrastructure/
-│   └── persistence/
-│       ├── contracts/
-│       │   └── today-repository.ts
-│       └── guest/
-│           ├── guest-db.ts
-│           ├── guest-today-repository.ts
-│           └── guest-today-repository.test.ts
-└── test/
-    └── setup.ts
+│   ├── shared/result.ts
+│   ├── shared/local-date.ts
+│   ├── shared/local-date.test.ts
+│   ├── capacity/capacity.ts
+│   ├── capacity/capacity.test.ts
+│   ├── work-items/work-item.ts
+│   ├── work-items/work-item.test.ts
+│   ├── daily-plans/daily-plan.ts
+│   ├── daily-plans/priorities.ts
+│   ├── daily-plans/priorities.test.ts
+│   ├── time-blocks/time-block.ts
+│   ├── time-blocks/time-block.test.ts
+│   ├── commitments/commitment.ts
+│   └── commitments/commitment.test.ts
+├── features/today/
+│   ├── application/today-service.ts
+│   ├── application/today-service.test.ts
+│   ├── application/client-today-service.ts
+│   ├── components/TodayScreen.tsx
+│   ├── components/CapacityPanel.tsx
+│   ├── components/QuickCaptureForm.tsx
+│   ├── components/PriorityList.tsx
+│   ├── components/TaskList.tsx
+│   ├── components/TimeBlockList.tsx
+│   ├── components/CommitmentPanel.tsx
+│   ├── hooks/useTodayController.ts
+│   └── today-ui.test.tsx
+├── infrastructure/persistence/
+│   ├── contracts/today-repository.ts
+│   └── guest/
+│       ├── guest-db.ts
+│       ├── guest-today-repository.ts
+│       └── guest-today-repository.test.ts
+└── test/setup.ts
 
-e2e/
-└── today.spec.ts
-
-docs/superpowers/parity/
-└── smart-planner-behavior-parity.md
-
-.github/workflows/
-└── quality.yml
+e2e/today.spec.ts
+docs/superpowers/parity/smart-planner-behavior-parity.md
+.github/workflows/quality.yml
 ```
 
 ---
 
-### Task 1: Establish a trustworthy toolchain and behavior-parity safety net
+### Task 1: Establish the test/tooling baseline and parity register
 
 **Files:**
 - Modify: `package.json`
-- Replace generated lock choice: remove `package-lock.json`, create and commit `bun.lock`
+- Remove lock format: `package-lock.json`
+- Create from install: `bun.lock`
 - Modify: `vitest.config.ts`
 - Create: `eslint.config.mjs`
 - Create: `playwright.config.ts`
@@ -132,47 +118,46 @@ docs/superpowers/parity/
 - Create: `docs/superpowers/parity/smart-planner-behavior-parity.md`
 
 **Interfaces:**
-- Produces scripts: `typecheck`, `lint`, `test`, `build`, `e2e`
-- Produces browser-test environment with Testing Library + fake IndexedDB
-- Produces parity register that later cleanup tasks must update instead of silently deleting behavior
+- Produces scripts `typecheck`, `lint`, `test`, `build`, `e2e`
+- Produces jsdom + fake IndexedDB test environment
+- Produces parity register that constrains every later deletion
 
-- [ ] **Step 1: Record the inherited capability register before deleting any prototype code**
+- [ ] **Step 1: Record Smart Planner capability obligations before cleanup**
 
-Create `docs/superpowers/parity/smart-planner-behavior-parity.md` with this exact initial table:
+Create:
 
 ```markdown
 # Smart Planner Behavior Parity Register
 
 | Capability family | Status | Evidence / replacement target |
 | --- | --- | --- |
-| Daily capacity 0–16h | NOT YET IMPLEMENTED | Foundation + Today slice |
-| Flexible planning / scheduling | NOT YET IMPLEMENTED | TimeBlock in Foundation + Today; multi-day planner later |
-| Schedule forecasting | NOT YET IMPLEMENTED | Projects/Planner slice |
-| Focus timer / preferences / transitions | NOT YET IMPLEMENTED | Focus Station slice |
-| Habit tracking | NOT YET IMPLEMENTED | Habits & Routines slice |
-| Projects / roadmaps / lesson placement | NOT YET IMPLEMENTED | Projects/Planner slice |
-| Progress analytics | NOT YET IMPLEMENTED | Review/Analytics slice |
-| Weekly metrics / review | NOT YET IMPLEMENTED | Shutdown + Weekly Review slice |
-| PWA / reminders / Web Push | NOT YET IMPLEMENTED | PWA/Push slice |
-| Backup / storage safety / migration | NOT YET IMPLEMENTED | Guest persistence begins in Foundation; migration later |
-| Daily commitment snapshot | SUPERSEDED | New Discipline Engine capability; immutable snapshot + divergence |
+| Daily capacity 0–16h | NOT YET IMPLEMENTED | Foundation + Today |
+| Flexible planning / scheduling | NOT YET IMPLEMENTED | TimeBlock first; multi-day planner later |
+| Schedule forecasting | NOT YET IMPLEMENTED | Projects/Planner |
+| Focus timer / preferences / transitions | NOT YET IMPLEMENTED | Focus Station |
+| Habit tracking | NOT YET IMPLEMENTED | Habits & Routines |
+| Projects / roadmaps / lesson placement | NOT YET IMPLEMENTED | Projects/Planner |
+| Progress analytics | NOT YET IMPLEMENTED | Review/Analytics |
+| Weekly metrics / review | NOT YET IMPLEMENTED | Shutdown + Weekly Review |
+| PWA / reminders / Web Push | NOT YET IMPLEMENTED | PWA/Push |
+| Backup / storage safety / migration | NOT YET IMPLEMENTED | Safe guest store begins now; migration later |
+| Daily commitment snapshot | SUPERSEDED | New Discipline Engine: immutable snapshot + divergence |
 ```
 
-- [ ] **Step 2: Normalize the package manager and add only first-slice dependencies**
+- [ ] **Step 2: Switch to Bun lockfile and add new-slice dependencies without removing prototype dependencies yet**
 
 Run:
 
 ```bash
 rm -f package-lock.json
-bun remove @supabase/ssr @supabase/supabase-js canvas-confetti framer-motion zustand
 bun add zod idb
-bun add -d @testing-library/react @testing-library/jest-dom jsdom fake-indexeddb @playwright/test eslint eslint-config-next
+bun add -d @testing-library/react @testing-library/jest-dom jsdom fake-indexeddb @playwright/test eslint eslint-config-next @eslint/eslintrc
 bun install
 ```
 
-Keep `next`, `react`, `react-dom`, `tailwindcss`, `lucide-react`, `clsx`, `tailwind-merge`, `next-themes`, `sonner` unless later tasks prove one unused.
+Do **not** remove Supabase, Zustand, confetti, motion or audio-related prototype dependencies in this task; current prototype files still import them.
 
-Set scripts to:
+Set scripts:
 
 ```json
 {
@@ -189,7 +174,7 @@ Set scripts to:
 }
 ```
 
-- [ ] **Step 3: Configure Vitest for both pure-domain and React tests**
+- [ ] **Step 3: Configure Vitest**
 
 `vitest.config.ts`:
 
@@ -204,11 +189,7 @@ export default defineConfig({
     setupFiles: ['./src/test/setup.ts'],
     restoreMocks: true,
   },
-  resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './src'),
-    },
-  },
+  resolve: { alias: { '@': path.resolve(__dirname, './src') } },
 });
 ```
 
@@ -234,11 +215,9 @@ const compat = new FlatCompat({ baseDirectory: __dirname });
 
 export default [
   ...compat.extends('next/core-web-vitals', 'next/typescript'),
-  { ignores: ['.next/**', 'coverage/**', 'playwright-report/**', 'test-results/**'] },
+  { ignores: ['.next/**', 'playwright-report/**', 'test-results/**'] },
 ];
 ```
-
-If installed `eslint-config-next` exposes native flat config in the resolved version, use its documented flat export instead of `FlatCompat`; the observable requirement is that `bun run lint` lint-checks the repository without `next lint`.
 
 `playwright.config.ts`:
 
@@ -247,12 +226,8 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: './e2e',
-  fullyParallel: true,
   retries: process.env.CI ? 2 : 0,
-  use: {
-    baseURL: 'http://127.0.0.1:3000',
-    trace: 'on-first-retry',
-  },
+  use: { baseURL: 'http://127.0.0.1:3000', trace: 'on-first-retry' },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {
     command: 'bun run dev',
@@ -262,18 +237,18 @@ export default defineConfig({
 });
 ```
 
-- [ ] **Step 5: Run the repository gates and record the baseline**
+- [ ] **Step 5: Verify the toolchain before feature work**
 
 Run:
 
 ```bash
 bun run typecheck
-bun run lint
 bun run test
 bun run build
+bun run lint
 ```
 
-Expected: failures caused by removing prototype-only dependencies are allowed at this point only if they are listed in the commit message/body and are resolved by Task 6 when prototype runtime code is removed. Test infrastructure itself must load successfully.
+Expected: typecheck/test/build remain green. Lint must execute against the repository; fix existing lint violations without changing product behavior rather than weakening rules.
 
 - [ ] **Step 6: Commit**
 
@@ -304,70 +279,55 @@ git commit -m "chore: establish rebuild quality baseline"
 - Create: `src/domain/commitments/commitment.test.ts`
 
 **Interfaces:**
-- Produces `Result<T>`, `LocalDateKey`, `WorkItem`, `DailyPlan`, `DailyPriority`, `TimeBlock`, `DailyCommitmentSnapshot`
-- Produces domain functions used by persistence and application tasks
+- Produces `Result<T>`, `WorkItem`, `DailyPlan`, `DailyPriority`, `TimeBlock`, `DailyCommitmentSnapshot`
+- Domain imports no React, Next.js or persistence API
 
-- [ ] **Step 1: Write failing tests for local dates and capacity**
-
-`src/domain/shared/local-date.test.ts`:
+- [ ] **Step 1: Write failing local-date and capacity tests**
 
 ```ts
+// local-date.test.ts
 import { describe, expect, it } from 'vitest';
-import { toLocalDateKey, parseLocalDateKey } from './local-date';
+import { parseLocalDateKey, toLocalDateKey } from './local-date';
 
 describe('local date keys', () => {
-  it('uses the local calendar date rather than UTC date', () => {
-    const date = new Date('2026-08-30T17:30:00.000Z'); // 00:30 next day at UTC+7
-    expect(toLocalDateKey(date, 7 * 60)).toBe('2026-08-31');
+  it('uses the requested local offset near midnight', () => {
+    const date = new Date('2026-08-30T17:30:00.000Z');
+    expect(toLocalDateKey(date, 420)).toBe('2026-08-31');
   });
-
-  it('rejects impossible dates', () => {
-    expect(parseLocalDateKey('2026-02-30')).toBeNull();
-  });
+  it('rejects impossible dates', () => expect(parseLocalDateKey('2026-02-30')).toBeNull());
 });
-```
 
-`src/domain/capacity/capacity.test.ts`:
-
-```ts
-import { describe, expect, it } from 'vitest';
+// capacity.test.ts
+import { expect, it } from 'vitest';
 import { analyzeCapacity, validateCapacityMinutes } from './capacity';
 
-describe('capacity', () => {
-  it('accepts 0 and 960 and rejects values outside the range', () => {
-    expect(validateCapacityMinutes(0).ok).toBe(true);
-    expect(validateCapacityMinutes(960).ok).toBe(true);
-    expect(validateCapacityMinutes(-30).ok).toBe(false);
-    expect(validateCapacityMinutes(990).ok).toBe(false);
-  });
+it('accepts 0..960 only in 30-minute increments', () => {
+  expect(validateCapacityMinutes(0).ok).toBe(true);
+  expect(validateCapacityMinutes(960).ok).toBe(true);
+  expect(validateCapacityMinutes(301).ok).toBe(false);
+  expect(validateCapacityMinutes(990).ok).toBe(false);
+});
 
-  it('requires 30-minute increments', () => {
-    expect(validateCapacityMinutes(301).ok).toBe(false);
-  });
-
-  it('reports overbooking without rejecting the plan', () => {
-    expect(analyzeCapacity(300, 360)).toEqual({
-      capacityMinutes: 300,
-      scheduledMinutes: 360,
-      remainingMinutes: -60,
-      isOverbooked: true,
-      showHighCapacityCaution: false,
-    });
+it('reports overbooking without blocking it', () => {
+  expect(analyzeCapacity(300, 360)).toEqual({
+    capacityMinutes: 300,
+    scheduledMinutes: 360,
+    remainingMinutes: -60,
+    isOverbooked: true,
+    showHighCapacityCaution: false,
   });
 });
 ```
 
-Run:
+Run and verify RED:
 
 ```bash
 bun run test src/domain/shared/local-date.test.ts src/domain/capacity/capacity.test.ts
 ```
 
-Expected: FAIL because modules do not exist.
+- [ ] **Step 2: Implement `Result`, local-date helpers and capacity**
 
-- [ ] **Step 2: Implement shared result, date helpers and capacity logic**
-
-`src/domain/shared/result.ts`:
+`result.ts`:
 
 ```ts
 export type Result<T> =
@@ -378,19 +338,17 @@ export const ok = <T>(value: T): Result<T> => ({ ok: true, value });
 export const err = (code: string, message: string): Result<never> => ({ ok: false, code, message });
 ```
 
-`src/domain/shared/local-date.ts` must expose:
+`local-date.ts` exports:
 
 ```ts
-export type LocalDateKey = `${number}-${number}-${number}`;
 export type LocalDateParts = { year: number; month: number; day: number };
-
-export function toLocalDateKey(date: Date, explicitOffsetMinutes?: number): LocalDateKey;
+export function toLocalDateKey(date: Date, explicitOffsetMinutes?: number): string;
 export function parseLocalDateKey(value: string): LocalDateParts | null;
 ```
 
-Implementation rule: when `explicitOffsetMinutes` is supplied, shift the UTC timestamp by that many minutes and read UTC fields from the shifted date; otherwise use the environment's local `getFullYear/getMonth/getDate` fields.
+When an explicit offset is supplied, shift the timestamp by that offset and read UTC fields from the shifted value. Without it, read environment-local fields. Validate parsed dates by reconstructing year/month/day and comparing fields.
 
-`src/domain/capacity/capacity.ts` must expose:
+`capacity.ts` exports:
 
 ```ts
 export function validateCapacityMinutes(minutes: number): Result<number>;
@@ -403,16 +361,14 @@ export function analyzeCapacity(capacityMinutes: number, scheduledMinutes: numbe
 };
 ```
 
-Rules: integer, 0–960 inclusive, divisible by 30; caution when capacity > 720.
+Rules: integer; 0–960; divisible by 30; caution >720.
 
-Run the two tests again. Expected: PASS.
+Run tests and verify GREEN.
 
-- [ ] **Step 3: Write failing tests for work-item completion/reopen**
-
-`src/domain/work-items/work-item.test.ts`:
+- [ ] **Step 3: Write failing work-item lifecycle tests**
 
 ```ts
-import { describe, expect, it } from 'vitest';
+import { expect, it } from 'vitest';
 import { completeWorkItem, reopenWorkItem, type WorkItem } from './work-item';
 
 const item: WorkItem = {
@@ -429,56 +385,71 @@ it('completes without fabricating actual minutes', () => {
   expect(done.completedAt).toBe('2026-08-30T10:00:00.000Z');
 });
 
-it('reopens to scheduled only when a relevant block exists', () => {
-  expect(reopenWorkItem({ ...item, status: 'completed' }, false).status).toBe('backlog');
-  expect(reopenWorkItem({ ...item, status: 'completed' }, true).status).toBe('scheduled');
+it('reopens according to scheduling evidence', () => {
+  expect(reopenWorkItem({ ...item, status: 'completed' }, false, '2026-08-30T11:00:00.000Z').status).toBe('backlog');
+  expect(reopenWorkItem({ ...item, status: 'completed' }, true, '2026-08-30T11:00:00.000Z').status).toBe('scheduled');
 });
 ```
 
 Run and verify RED.
 
-- [ ] **Step 4: Implement the work-item model**
+- [ ] **Step 4: Implement `WorkItem` and lifecycle functions**
 
-`src/domain/work-items/work-item.ts` defines the spec-v2 `WorkItem` model and:
+Define:
 
 ```ts
+export type WorkItemType = 'task' | 'lesson' | 'milestone';
+export type WorkItemPriority = 'p1_urgent' | 'p2_high' | 'p3_medium' | 'p4_low';
+export type WorkItemStatus = 'backlog' | 'scheduled' | 'in_progress' | 'completed';
+
+export interface WorkItem {
+  id: string;
+  projectId: string | null;
+  title: string;
+  notes: string;
+  type: WorkItemType;
+  estimatedMinutes: number;
+  actualMinutes: number;
+  priority: WorkItemPriority;
+  status: WorkItemStatus;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export function completeWorkItem(item: WorkItem, completedAt: string): WorkItem;
-export function reopenWorkItem(item: WorkItem, hasRelevantBlock: boolean): WorkItem;
+export function reopenWorkItem(item: WorkItem, hasRelevantBlock: boolean, reopenedAt: string): WorkItem;
 ```
 
-Both functions return new objects and update `updatedAt`; neither mutates `actualMinutes`.
+Both return new objects; neither changes `actualMinutes`.
 
 Run and verify GREEN.
 
-- [ ] **Step 5: Write failing tests for priority ranking and time blocks**
-
-`src/domain/daily-plans/priorities.test.ts`:
+- [ ] **Step 5: Write failing priorities/time-block tests**
 
 ```ts
+// priorities.test.ts
 import { expect, it } from 'vitest';
 import { buildPriorities } from './priorities';
 
 it('deduplicates, limits to three and creates contiguous ranks', () => {
-  const result = buildPriorities('plan-1', ['a', 'b', 'a', 'c', 'd'], () => 'id');
-  expect(result.map((p) => [p.workItemId, p.rank])).toEqual([
-    ['a', 1], ['b', 2], ['c', 3],
-  ]);
+  let n = 0;
+  const result = buildPriorities('plan-1', ['a', 'b', 'a', 'c', 'd'], () => `p${++n}`);
+  expect(result.map((p) => [p.workItemId, p.rank])).toEqual([['a', 1], ['b', 2], ['c', 3]]);
 });
-```
 
-`src/domain/time-blocks/time-block.test.ts`:
-
-```ts
+// time-block.test.ts
 import { expect, it } from 'vitest';
 import { detectOverlaps, validateTimeBlock, type TimeBlock } from './time-block';
 
-it('rejects inverted and out-of-day blocks', () => {
-  expect(validateTimeBlock({ startMinute: 600, endMinute: 600 }).ok).toBe(false);
-  expect(validateTimeBlock({ startMinute: -1, endMinute: 30 }).ok).toBe(false);
-  expect(validateTimeBlock({ startMinute: 1400, endMinute: 1441 }).ok).toBe(false);
+it('rejects inverted, out-of-day and targetless blocks', () => {
+  expect(validateTimeBlock({ workItemId: 'w1', habitId: null, startMinute: 600, endMinute: 600 }).ok).toBe(false);
+  expect(validateTimeBlock({ workItemId: 'w1', habitId: null, startMinute: -1, endMinute: 30 }).ok).toBe(false);
+  expect(validateTimeBlock({ workItemId: 'w1', habitId: null, startMinute: 1400, endMinute: 1441 }).ok).toBe(false);
+  expect(validateTimeBlock({ workItemId: null, habitId: null, startMinute: 600, endMinute: 660 }).ok).toBe(false);
 });
 
-it('detects but does not forbid overlaps', () => {
+it('detects overlap without declaring the blocks invalid', () => {
   const blocks = [
     { id: 'a', date: '2026-08-30', workItemId: 'w1', habitId: null, startMinute: 600, endMinute: 660, createdAt: '', updatedAt: '' },
     { id: 'b', date: '2026-08-30', workItemId: 'w2', habitId: null, startMinute: 650, endMinute: 700, createdAt: '', updatedAt: '' },
@@ -489,9 +460,7 @@ it('detects but does not forbid overlaps', () => {
 
 Run and verify RED.
 
-- [ ] **Step 6: Implement daily plan, priorities and time-block domain**
-
-Required models:
+- [ ] **Step 6: Implement `DailyPlan`, priorities and `TimeBlock`**
 
 ```ts
 export interface DailyPlan {
@@ -522,29 +491,24 @@ export interface TimeBlock {
 }
 ```
 
-`buildPriorities` must remove duplicate IDs while preserving first occurrence, slice to three, and rank 1..N. `validateTimeBlock` validates bounds and target XOR; `detectOverlaps` returns sorted ID pairs for blocks whose half-open intervals intersect.
+`buildPriorities(planId, ids, newId)` removes duplicates preserving first appearance, keeps the first three and ranks 1..N. `validateTimeBlock` enforces target XOR and bounds. `detectOverlaps` treats intervals as `[startMinute,endMinute)`.
 
 Run and verify GREEN.
 
-- [ ] **Step 7: Write failing commitment snapshot tests**
-
-`src/domain/commitments/commitment.test.ts`:
+- [ ] **Step 7: Write failing commitment comparison test**
 
 ```ts
 import { expect, it } from 'vitest';
 import { compareCommitment, type DailyCommitmentSnapshot } from './commitment';
 
-it('reports capacity and schedule divergence after commitment', () => {
+it('reports exact categories changed after commitment', () => {
   const committed: DailyCommitmentSnapshot = {
     id: 'c1', date: '2026-08-30', committedAt: '2026-08-30T08:00:00.000Z',
-    capacityMinutes: 300,
-    priorityWorkItemIds: ['a', 'b'],
+    capacityMinutes: 300, priorityWorkItemIds: ['a', 'b'],
     timeBlocks: [{ workItemId: 'a', startMinute: 600, endMinute: 660 }],
   };
-
   expect(compareCommitment(committed, {
-    capacityMinutes: 240,
-    priorityWorkItemIds: ['a', 'b'],
+    capacityMinutes: 240, priorityWorkItemIds: ['a', 'b'],
     timeBlocks: [{ workItemId: 'a', startMinute: 600, endMinute: 690 }],
   })).toEqual({ capacityChanged: true, prioritiesChanged: false, timeBlocksChanged: true, hasDivergence: true });
 });
@@ -552,9 +516,7 @@ it('reports capacity and schedule divergence after commitment', () => {
 
 Run and verify RED.
 
-- [ ] **Step 8: Implement immutable commitment snapshots**
-
-`src/domain/commitments/commitment.ts`:
+- [ ] **Step 8: Implement immutable commitment model**
 
 ```ts
 export interface DailyCommitmentSnapshot {
@@ -580,9 +542,9 @@ export function compareCommitment(snapshot: DailyCommitmentSnapshot, current: Co
 };
 ```
 
-Comparison must be deterministic: compare priority order and compare time blocks after sorting by `startMinute`, then `endMinute`, then `workItemId ?? ''`.
+Sort both time-block arrays by `startMinute`, `endMinute`, then `workItemId ?? ''` before comparison.
 
-Run all Task 2 tests. Expected: PASS.
+Run all Task 2 tests and verify GREEN.
 
 - [ ] **Step 9: Commit**
 
@@ -602,11 +564,11 @@ git commit -m "feat: add pure today domain core"
 - Create: `src/infrastructure/persistence/guest/guest-today-repository.test.ts`
 
 **Interfaces:**
-- Consumes domain models from Task 2
+- Consumes Task 2 domain types
 - Produces `TodayRepository`
-- Produces `createGuestTodayRepository(databaseName?: string): Promise<TodayRepository>`
+- Produces `createGuestTodayRepository(options?): Promise<TodayRepository>`
 
-`TodayRepository` must expose:
+`TodayRepository`:
 
 ```ts
 export interface TodayRepository {
@@ -618,6 +580,8 @@ export interface TodayRepository {
   listPriorities(planId: string): Promise<Result<DailyPriority[]>>;
   replacePriorities(planId: string, priorities: DailyPriority[]): Promise<Result<void>>;
   listTimeBlocks(date: string): Promise<Result<TimeBlock[]>>;
+  getTimeBlock(id: string): Promise<Result<TimeBlock | null>>;
+  listTimeBlocksForWorkItem(workItemId: string): Promise<Result<TimeBlock[]>>;
   saveTimeBlock(block: TimeBlock): Promise<Result<void>>;
   removeTimeBlock(id: string): Promise<Result<void>>;
   getCommitment(date: string): Promise<Result<DailyCommitmentSnapshot | null>>;
@@ -625,71 +589,87 @@ export interface TodayRepository {
 }
 ```
 
-- [ ] **Step 1: Write persistence tests first**
-
-`guest-today-repository.test.ts` must include these behaviors:
+Testable factory options:
 
 ```ts
-it('persists entities across repository re-instantiation', async () => { /* create db name, save task, reopen, read */ });
-it('returns corrupt_record instead of treating invalid persisted data as missing', async () => { /* write malformed row through raw IDB, then query */ });
-it('replaces priorities atomically', async () => { /* old priorities -> replacement -> only replacement remains */ });
-it('does not partially replace priorities when transaction aborts', async () => { /* inject transaction failure hook and verify originals remain */ });
-it('keeps commitment snapshots immutable by date', async () => { /* second save for same date returns commitment_exists */ });
+export interface GuestTodayRepositoryOptions {
+  databaseName?: string;
+  beforePriorityCommit?: () => void;
+}
 ```
 
-Use a unique database name per test and delete it in `afterEach`.
+`beforePriorityCommit` exists only to deterministically abort a test transaction; production calls omit it.
 
-Run:
+- [ ] **Step 1: Write persistence tests first**
+
+Write real tests with these assertions:
+
+```ts
+it('persists a work item across repository re-instantiation', async () => {
+  const name = `guest-${crypto.randomUUID()}`;
+  const first = await createGuestTodayRepository({ databaseName: name });
+  expect((await first.saveWorkItem(workItem)).ok).toBe(true);
+  const second = await createGuestTodayRepository({ databaseName: name });
+  expect(await second.getWorkItem(workItem.id)).toEqual({ ok: true, value: workItem });
+});
+
+it('returns corrupt_record and leaves malformed storage untouched', async () => {
+  // Open the same database with idb, write { id: 'bad' } into workItems,
+  // call getWorkItem('bad'), assert code === 'corrupt_record',
+  // then read raw row again and assert it still equals { id: 'bad' }.
+});
+
+it('replaces daily priorities atomically', async () => {
+  // Save original priorities, replace them, assert only replacement rows exist in rank order.
+});
+
+it('aborts priority replacement without partial writes', async () => {
+  // Create repository with beforePriorityCommit: () => { throw new Error('forced abort'); }.
+  // Start from existing priorities, call replacePriorities, assert error,
+  // reopen repository without the hook and assert originals remain exactly.
+});
+
+it('refuses a second commitment for the same local date', async () => {
+  // First save succeeds; second save returns code commitment_exists; first snapshot remains unchanged.
+});
+```
+
+Replace the explanatory comments with concrete test setup/assertions in the committed test file.
+
+Run and verify RED:
 
 ```bash
 bun run test src/infrastructure/persistence/guest/guest-today-repository.test.ts
 ```
 
-Expected: RED because repository modules do not exist.
+- [ ] **Step 2: Implement typed database and Zod schemas**
 
-- [ ] **Step 2: Implement typed database schema and Zod validators**
+Database: `personal-productivity-guest`, version `1`.
 
-`guest-db.ts` defines stores:
+Stores/indexes:
 
 ```text
-workItems
-  keyPath: id
-
-dailyPlans
-  keyPath: id
-  index: date unique
-
-dailyPriorities
-  keyPath: id
-  index: dailyPlanId non-unique
-
-timeBlocks
-  keyPath: id
-  index: date non-unique
-
-dailyCommitments
-  keyPath: id
-  index: date unique
-
-meta
-  keyPath: key
+workItems            keyPath id
+dailyPlans           keyPath id; unique index date
+dailyPriorities      keyPath id; index dailyPlanId
+timeBlocks           keyPath id; index date; index workItemId
+dailyCommitments     keyPath id; unique index date
+meta                 keyPath key
 ```
 
-Database name default: `personal-productivity-guest`; version: `1`.
-
-Create Zod schemas that mirror the Task 2 models exactly. Every read parses records before returning them. A parse failure returns:
+Every returned record is parsed by Zod. On parse failure return:
 
 ```ts
 { ok: false, code: 'corrupt_record', message: 'Stored data is invalid and was left untouched.' }
 ```
 
-Do not delete or rewrite the bad row.
+Never delete/rewrite invalid rows during reads.
 
 - [ ] **Step 3: Implement repository methods and atomic priority replacement**
 
-`replacePriorities` must open one `readwrite` transaction spanning `dailyPriorities`, delete all rows for `planId`, insert the replacement list, and await `tx.done`. Any error returns `persistence_write_failed` and the aborted transaction must preserve original state.
+`replacePriorities` opens one readwrite transaction on `dailyPriorities`, deletes rows for `planId`, inserts replacements, invokes `beforePriorityCommit?.()`, then awaits `tx.done`. If the hook or IDB fails, abort and return `persistence_write_failed`.
 
-`saveCommitment` must query the unique `date` index first and return `commitment_exists` when a snapshot already exists for that date.
+`saveCommitment` checks the unique date index first. Existing date → `commitment_exists`; it never updates the old snapshot.
 
 - [ ] **Step 4: Run persistence tests**
 
@@ -708,7 +688,7 @@ git commit -m "feat: add safe indexeddb guest repository"
 
 ---
 
-### Task 4: Build the Today application service and commitment loop
+### Task 4: Build Today application service and commitment loop
 
 **Files:**
 - Create: `src/features/today/application/today-service.ts`
@@ -716,11 +696,7 @@ git commit -m "feat: add safe indexeddb guest repository"
 
 **Interfaces:**
 - Consumes `TodayRepository`
-- Produces `TodayService`
-- Produces `TodayViewModel`
-- This is the only layer React needs for first-slice business mutations
-
-Required interface:
+- Produces `TodayService` and `TodayViewModel`
 
 ```ts
 export interface TodayService {
@@ -730,16 +706,12 @@ export interface TodayService {
   setDailyPriorities(date: string, workItemIds: string[]): Promise<Result<DailyPriority[]>>;
   createTimeBlock(input: { date: string; workItemId: string; startMinute: number; endMinute: number }): Promise<Result<TimeBlock>>;
   updateTimeBlock(id: string, patch: { startMinute: number; endMinute: number }): Promise<Result<TimeBlock>>;
-  deleteTimeBlock(id: string, date: string): Promise<Result<void>>;
+  deleteTimeBlock(id: string): Promise<Result<void>>;
   completeTask(workItemId: string): Promise<Result<WorkItem>>;
   reopenTask(workItemId: string, date: string): Promise<Result<WorkItem>>;
   commitToday(date: string): Promise<Result<DailyCommitmentSnapshot>>;
 }
-```
 
-Constructor:
-
-```ts
 export function createTodayService(deps: {
   repository: TodayRepository;
   now: () => Date;
@@ -747,24 +719,7 @@ export function createTodayService(deps: {
 }): TodayService;
 ```
 
-- [ ] **Step 1: Write failing service tests**
-
-At minimum:
-
-```ts
-it('creates a task with truthful defaults', async () => { /* type task, backlog, actualMinutes 0 */ });
-it('rejects capacity outside the domain rule before writing', async () => { /* 301 or 990 */ });
-it('rejects unknown priority work item IDs', async () => { /* no dangling reference */ });
-it('rejects a time block for an unknown work item', async () => { /* unknown_entity */ });
-it('aggregates scheduled minutes and overbooking into TodayViewModel', async () => { /* capacity 300, blocks 360 */ });
-it('commits capacity, ordered priorities and time blocks exactly once', async () => { /* immutable snapshot */ });
-it('shows divergence after capacity or time-block edits', async () => { /* compare snapshot/current */ });
-it('reopening chooses scheduled only when today/future block evidence exists', async () => { /* scheduled vs backlog */ });
-```
-
-Run and verify RED.
-
-- [ ] **Step 2: Define `TodayViewModel`**
+`TodayViewModel`:
 
 ```ts
 export interface TodayViewModel {
@@ -788,40 +743,77 @@ export interface TodayViewModel {
 }
 ```
 
-When a date has no plan, `getTodayView` creates the in-memory default representation with `capacityMinutes: 360` and empty priorities/blocks; it must not write until the user makes a mutation.
+- [ ] **Step 1: Write failing service tests**
 
-- [ ] **Step 3: Implement the service minimally**
+Implement concrete in-memory `TodayRepository` test double and tests for:
 
-Rules:
+```ts
+it('creates task with task/backlog/actualMinutes=0 defaults', async () => { /* assert full saved item */ });
+it('rejects capacity 301 without repository write', async () => { /* invalid_capacity */ });
+it('rejects unknown priority IDs', async () => { /* unknown_entity */ });
+it('rejects time block for unknown work item', async () => { /* unknown_entity */ });
+it('derives scheduled=360 remaining=-60 overbooked=true for capacity=300', async () => { /* getTodayView */ });
+it('commits capacity, ordered priorities and sorted blocks exactly once', async () => { /* immutable snapshot */ });
+it('reports divergence after capacity changes post-commit', async () => { /* capacityChanged */ });
+it('updates a time block by repository ID lookup', async () => { /* getTimeBlock -> validate -> save */ });
+it('reopens as scheduled when task has a block on requested date or later', async () => { /* listTimeBlocksForWorkItem */ });
+it('reopens as backlog when no relevant block exists', async () => { /* no future/today block */ });
+```
 
-- `createTask` trims title and rejects empty title; estimate must be positive integer minutes.
-- `setDailyCapacity` validates with `validateCapacityMinutes`.
-- `setDailyPriorities` verifies every item exists and calls `buildPriorities`.
-- `createTimeBlock` verifies work item exists, validates time range and stores a generated ID.
-- `updateTimeBlock` loads today's blocks through the view/service path, finds the ID, validates patch and saves replacement.
-- `completeTask` uses `completeWorkItem` and does not alter time blocks.
-- `reopenTask` considers a relevant block present when the task has a block whose date is the requested date or later.
-- `commitToday` calls `getTodayView`, snapshots capacity + priority order + sorted time blocks, then stores it once.
-- `getTodayView` compares current state with snapshot when one exists.
+Replace all comments with concrete fixtures/assertions before commit.
 
-- [ ] **Step 4: Run the service tests**
+Run and verify RED.
+
+- [ ] **Step 2: Implement default-plan and mutation rules**
+
+If no plan exists for `date`, `getTodayView` returns an in-memory default:
+
+```ts
+{
+  id: `plan-${date}`,
+  date,
+  capacityMinutes: 360,
+  morningIntention: '',
+  createdAt: nowIso,
+  updatedAt: nowIso,
+}
+```
+
+Do not persist that default until a mutation requires it. `setDailyCapacity` and `setDailyPriorities` create/save the plan when absent.
+
+`createTask`: trim non-empty title; positive integer estimate; defaults `task`, `backlog`, `projectId:null`, `notes:''`, `actualMinutes:0`, `completedAt:null`.
+
+`setDailyPriorities`: verify every ID resolves to a work item, then call `buildPriorities` and `replacePriorities`.
+
+`createTimeBlock`: verify item exists, validate bounds/XOR, save generated block.
+
+`updateTimeBlock`: `getTimeBlock(id)`; unknown → `unknown_entity`; validate patched bounds; preserve date/target/id/timestamps appropriately.
+
+`reopenTask`: fetch `listTimeBlocksForWorkItem`; `hasRelevantBlock = blocks.some(block => block.date >= date)` because YYYY-MM-DD keys sort chronologically.
+
+`commitToday`: call `getTodayView`, snapshot capacity, ordered priority IDs and sorted blocks, then `saveCommitment`. Never derive actual work from the snapshot.
+
+- [ ] **Step 3: Implement aggregation**
+
+`getTodayView`:
+
+```ts
+scheduledMinutes = timeBlocks.reduce((sum, block) => sum + block.endMinute - block.startMinute, 0)
+```
+
+Use `analyzeCapacity`, `detectOverlaps`, and `compareCommitment`. Sort priorities by rank and blocks by start/end/ID.
+
+- [ ] **Step 4: Run service tests and commit**
 
 ```bash
 bun run test src/features/today/application/today-service.test.ts
-```
-
-Expected: PASS.
-
-- [ ] **Step 5: Commit**
-
-```bash
 git add src/features/today/application
 git commit -m "feat: add today application service and commitment loop"
 ```
 
 ---
 
-### Task 5: Replace the Today UI with a service-backed workstation
+### Task 5: Build service-backed Today UI test-first
 
 **Files:**
 - Create: `src/features/today/components/TodayScreen.tsx`
@@ -839,125 +831,151 @@ git commit -m "feat: add today application service and commitment loop"
 - Create: `src/components/ui/Select.tsx`
 
 **Interfaces:**
-- Consumes only `TodayService` through `useTodayController`
-- UI does not import repository, IndexedDB, Zustand or localStorage
+- UI consumes `TodayService`; it imports no repository, storage primitive or Zustand store
+- Stable accessible names below become the Playwright contract
 
-- [ ] **Step 1: Write behavior-first UI tests**
+Accessible-control contract:
 
-Use an in-memory fake `TodayService` and React Testing Library. Required tests:
-
-```ts
-it('creates a task from title, estimate and priority', async () => { /* submit form -> service createTask -> refreshed list */ });
-it('allows at most three ranked priorities and preserves order', async () => { /* reorder/select -> setDailyPriorities */ });
-it('shows remaining capacity and an overbooked warning', async () => { /* vm isOverbooked */ });
-it('shows a high-capacity caution without disabling Commit Today', async () => { /* >720 */ });
-it('commits the day and renders committed state', async () => { /* commitToday */ });
-it('renders plan-changed status when divergence exists', async () => { /* hasDivergence */ });
-it('shows persistence failures as failures rather than optimistic success', async () => { /* mutation returns err -> visible alert */ });
+```text
+Daily capacity minutes
+Save capacity
+Task title
+Estimated minutes
+Priority
+Add task
+Add <task title> to Top 3
+Move <task title> up
+Move <task title> down
+Remove <task title> from Top 3
+Time block task
+Time block start
+Time block end
+Add time block
+Edit time block <task title>
+Delete time block <task title>
+Complete <task title>
+Reopen <task title>
+Commit Today
 ```
 
-Run and verify RED.
+- [ ] **Step 1: Write failing UI tests with a fake TodayService**
 
-- [ ] **Step 2: Implement the controller hook**
-
-`useTodayController(service, date)` owns only view/loading/error UI state. After every successful mutation it reloads `getTodayView(date)`. After a failed mutation it preserves the previous view and exposes the error message.
-
-Return:
+Concrete cases:
 
 ```ts
-{
-  view,
-  isLoading,
-  error,
-  actions: {
-    createTask,
-    setCapacity,
-    setPriorities,
-    createTimeBlock,
-    updateTimeBlock,
-    deleteTimeBlock,
-    completeTask,
-    reopenTask,
-    commitToday,
-  }
-}
+it('submits title, estimate and priority to createTask and refreshes the view', async () => { /* use labels above */ });
+it('prevents adding a fourth Top 3 item in the UI', async () => { /* three selected -> fourth add disabled */ });
+it('renders Available, Scheduled and Remaining values from the view model', async () => { /* text assertions */ });
+it('renders Overbooked by 60 min and still enables Commit Today', async () => { /* isOverbooked */ });
+it('renders high-capacity caution above 720 without disabling commit', async () => { /* caution text */ });
+it('renders Committed at after commit succeeds', async () => { /* commitment exists */ });
+it('renders Plan changed after commitment and changed categories', async () => { /* divergence */ });
+it('keeps previous view and shows error when persistence mutation fails', async () => { /* service err */ });
 ```
 
-- [ ] **Step 3: Implement focused UI components**
+Replace comments with complete fake-service setup/assertions before commit. Run and verify RED.
 
-`TodayScreen` order:
+- [ ] **Step 2: Implement `useTodayController`**
 
-1. date/status header;
-2. `CapacityPanel`;
-3. `QuickCaptureForm`;
-4. `PriorityList`;
-5. `TaskList`;
-6. `TimeBlockList`;
-7. `CommitmentPanel`.
+`useTodayController(service, date)` owns `view`, `isLoading`, `error`. On successful mutation, reload `getTodayView(date)`. On failure, retain previous `view` and expose the failure message.
 
-Required visible language/behavior:
+- [ ] **Step 3: Implement focused components**
 
-- Capacity displays `Available`, `Scheduled`, `Remaining`.
-- Overbooked state says the plan exceeds available capacity but does not block saving/commit.
-- Commitment button text is `Commit Today` before snapshot; after snapshot display `Committed at HH:mm` and do not offer a second commit.
-- When current plan diverges, display `Plan changed after commitment` and list which categories changed: capacity, priorities, schedule.
-- No confetti or score is shown on task completion.
-- Completed tasks remain visible and can be reopened.
-- Time blocks are created/edited with explicit time controls, not drag-and-drop.
+Screen order:
 
-- [ ] **Step 4: Run UI tests**
+1. local date/status header;
+2. Capacity;
+3. Quick Capture;
+4. Top 3;
+5. Task list;
+6. Time blocks;
+7. Commitment status/action.
+
+Visible rules:
+
+- Capacity shows `Available X min`, `Scheduled Y min`, `Remaining Z min`.
+- Negative remaining shows `Overbooked by N min` but does not disable save/commit.
+- >720 capacity shows `High capacity: protect sleep, meals and recovery.`
+- Before commitment: button `Commit Today`.
+- After commitment: show `Committed at HH:mm`; no second-commit button.
+- Divergence: show `Plan changed after commitment` plus `Capacity changed`, `Priorities changed`, and/or `Schedule changed`.
+- Completed tasks remain visible and show `Reopen <title>`.
+- No score/confetti on completion.
+- Time blocks use explicit HTML time inputs converted to integer minutes.
+
+- [ ] **Step 4: Run UI tests and commit**
 
 ```bash
 bun run test src/features/today/today-ui.test.tsx
-```
-
-Expected: PASS.
-
-- [ ] **Step 5: Commit**
-
-```bash
 git add src/features/today src/components/ui
 git commit -m "feat: build disciplined today workstation"
 ```
 
 ---
 
-### Task 6: Wire the real guest service, replace prototype runtime, and retire misleading prototype features
+### Task 6: Wire the guest runtime, then remove the prototype
 
 **Files:**
+- Create: `src/features/today/application/client-today-service.ts`
 - Replace: `src/app/(dashboard)/today/page.tsx`
 - Replace: `src/app/(dashboard)/layout.tsx`
+- Replace: `src/app/(dashboard)/page.tsx`
+- Replace: `src/app/layout.tsx`
 - Create: `src/components/shell/AppShell.tsx`
 - Create: `src/components/shell/Sidebar.tsx`
-- Modify: `src/app/(dashboard)/page.tsx`
-- Delete after replacement is green: `src/lib/store/useAppStore.ts`
-- Delete after replacement is green: old `src/components/workstation/*`
-- Delete after replacement is green: prototype `src/components/shared/*` that depend on the old store/audio
-- Delete after replacement is green: `src/lib/audio/*`
-- Delete after replacement is green: old `src/types/index.ts`
-- Delete after replacement is green: prototype routes `focus`, `habits`, `planner`, `projects`, `review`, `roadmap`, `settings`, and prototype AI API routes
-- Delete after replacement is green: prototype-only algorithms/parser when they depend on the obsolete model
+- Delete after replacement tests/build are green: `src/lib/store/useAppStore.ts`
+- Delete after replacement tests/build are green: `src/components/workstation/`
+- Delete after replacement tests/build are green: `src/components/shared/`
+- Delete after replacement tests/build are green: `src/components/courses/`
+- Delete after replacement tests/build are green: `src/lib/audio/`
+- Delete after replacement tests/build are green: `src/lib/algorithms/`
+- Delete after replacement tests/build are green: `src/lib/parser/`
+- Delete after replacement tests/build are green: `src/types/`
+- Delete after replacement tests/build are green: prototype route directories `focus`, `habits`, `planner`, `projects`, `review`, `roadmap`, `settings`
+- Delete after replacement tests/build are green: `src/app/api/ai/`
+- Modify: `package.json`
 - Modify: `docs/superpowers/parity/smart-planner-behavior-parity.md`
 
 **Interfaces:**
-- `/today` becomes the only canonical working product route in slice 1
 - `/` redirects to `/today`
-- Future capability names may appear as disabled navigation labels but must not pretend to work
+- `/today` is the only canonical working product route for slice 1
+- Future capability names may appear disabled in navigation; they must not pretend to be implemented
 
-- [ ] **Step 1: Write the route wiring before deleting the prototype**
+- [ ] **Step 1: Implement a stable client-service singleton**
 
-`src/app/(dashboard)/today/page.tsx` becomes a small client boundary that:
+`client-today-service.ts`:
 
 ```ts
-'use client';
-
-import { TodayScreen } from '@/features/today/components/TodayScreen';
-import { createTodayService } from '@/features/today/application/today-service';
+import { createTodayService, type TodayService } from './today-service';
 import { createGuestTodayRepository } from '@/infrastructure/persistence/guest/guest-today-repository';
-import { toLocalDateKey } from '@/domain/shared/local-date';
+
+let servicePromise: Promise<TodayService> | null = null;
+
+export function getGuestTodayService(): Promise<TodayService> {
+  if (!servicePromise) {
+    servicePromise = createGuestTodayRepository().then((repository) =>
+      createTodayService({
+        repository,
+        now: () => new Date(),
+        newId: () => crypto.randomUUID(),
+      }),
+    );
+  }
+  return servicePromise;
+}
 ```
 
-Create the repository/service once in a module-level async factory or a stable React initialization path; never recreate the IndexedDB connection on every render.
+- [ ] **Step 2: Replace Today route with a thin client boundary**
+
+`today/page.tsx` loads the singleton once in `useEffect`, renders a loading state until service exists, computes the current local key with `toLocalDateKey(new Date())`, then renders:
+
+```tsx
+<TodayScreen service={service} date={todayKey} />
+```
+
+No direct repository/storage import is allowed in `TodayScreen` or its child components.
+
+- [ ] **Step 3: Replace app/dashboard shell**
 
 `src/app/(dashboard)/page.tsx`:
 
@@ -966,13 +984,11 @@ import { redirect } from 'next/navigation';
 export default function DashboardPage() { redirect('/today'); }
 ```
 
-- [ ] **Step 2: Replace the dashboard shell**
+`AppShell` + `Sidebar` provide responsive navigation. `Today` is active. Future items (`Focus`, `Habits`, `Planner`, `Projects`, `Review`) are visibly disabled with `Later`; no links to deleted prototype routes.
 
-`AppShell` should provide a responsive sidebar/header shell without timer, quick-add, shutdown, command palette or audio dependencies. Navigation for future modules is disabled or labelled `Later` until their slice is implemented.
+Replace `src/app/layout.tsx` so it no longer imports prototype `ThemeProvider` or shared components. Preserve metadata and globals; theme switching may be deferred rather than keeping old store coupling.
 
-- [ ] **Step 3: Verify Today behavior before deleting old files**
-
-Run:
+- [ ] **Step 4: Verify replacement before deletion**
 
 ```bash
 bun run typecheck
@@ -980,42 +996,48 @@ bun run test
 bun run build
 ```
 
-Expected: PASS for the replacement flow. If old prototype code causes compile failures because prototype dependencies were removed, delete only the obsolete files listed in Step 4; do not weaken new domain types to make the prototype compile.
+Expected: new Today domain/application/UI tests pass. Prototype files may still compile because their dependencies have not yet been removed.
 
-- [ ] **Step 4: Remove prototype runtime code and stale model definitions**
+- [ ] **Step 5: Delete obsolete prototype runtime and remove its unused dependencies**
 
-Delete the listed obsolete store/components/routes/types. Git history preserves them. Do not copy old scheduled fields or `top3ItemIds` into new models to reduce deletion effort.
+Delete the exact directories/files listed in this task. Then run:
 
-- [ ] **Step 5: Update the parity register truthfully**
+```bash
+bun remove @supabase/ssr @supabase/supabase-js canvas-confetti framer-motion zustand date-fns
+```
 
-Change only capabilities actually implemented in this slice:
+Run `bun pm ls` and remove `sonner` / `next-themes` only if the replacement source has no imports for them. Do not remove `lucide-react`, `clsx`, `tailwind-merge`, `zod`, `idb`, React/Next/Tailwind or test dependencies.
+
+- [ ] **Step 6: Update parity register truthfully**
+
+Use these statuses:
 
 ```markdown
 | Daily capacity 0–16h | PRESERVED | `src/domain/capacity` + Today UI |
-| Flexible planning / scheduling | PRESERVED | Single-day TimeBlock implemented; multi-day planner remains later |
-| Backup / storage safety / migration | SUPERSEDED | Safe validated IndexedDB guest persistence implemented; legacy migration still NOT YET IMPLEMENTED |
-| Daily commitment snapshot | SUPERSEDED | Immutable snapshot + divergence implemented |
+| Flexible planning / scheduling | PRESERVED | Single-day `TimeBlock`; multi-day planner remains NOT YET IMPLEMENTED |
+| Schedule forecasting | NOT YET IMPLEMENTED | Projects/Planner |
+| Focus timer / preferences / transitions | NOT YET IMPLEMENTED | Focus Station |
+| Habit tracking | NOT YET IMPLEMENTED | Habits & Routines |
+| Projects / roadmaps / lesson placement | NOT YET IMPLEMENTED | Projects/Planner |
+| Progress analytics | NOT YET IMPLEMENTED | Review/Analytics |
+| Weekly metrics / review | NOT YET IMPLEMENTED | Shutdown + Weekly Review |
+| PWA / reminders / Web Push | NOT YET IMPLEMENTED | PWA/Push |
+| Backup / storage safety / migration | SUPERSEDED | Validated IndexedDB guest persistence now; legacy import/export remains NOT YET IMPLEMENTED |
+| Daily commitment snapshot | SUPERSEDED | Immutable snapshot + divergence |
 ```
 
-Leave Focus, Habits, Projects/Roadmaps, Forecast, Weekly Review and PWA/Push as `NOT YET IMPLEMENTED`.
-
-- [ ] **Step 6: Run all non-E2E gates**
+- [ ] **Step 7: Run all non-E2E gates and commit**
 
 ```bash
 bun run typecheck
 bun run lint
 bun run test
 bun run build
-```
-
-Expected: all PASS.
-
-- [ ] **Step 7: Commit**
-
-```bash
 git add -A
 git commit -m "refactor: replace prototype runtime with today vertical slice"
 ```
+
+All four commands must PASS before commit.
 
 ---
 
@@ -1024,42 +1046,69 @@ git commit -m "refactor: replace prototype runtime with today vertical slice"
 **Files:**
 - Create: `e2e/today.spec.ts`
 - Create: `.github/workflows/quality.yml`
-- Modify if needed: `playwright.config.ts`
+- Modify only if required by observed failure: `playwright.config.ts`
 
 **Interfaces:**
-- Produces regression proof for the complete first slice
-- Produces clean-checkout CI gate
+- E2E uses the accessible-control contract from Task 5
+- CI proves clean-checkout quality gates
 
-- [ ] **Step 1: Write the failing critical E2E flow**
+- [ ] **Step 1: Write the first concrete failing E2E**
 
-`e2e/today.spec.ts` must perform this exact journey using accessible labels/roles rather than CSS implementation selectors:
+`e2e/today.spec.ts`:
 
 ```ts
-import { test, expect } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 
-test('guest can plan, commit, diverge and reload without losing truth', async ({ page }) => {
+test('guest plans, commits, diverges and reloads without losing truth', async ({ page }) => {
   await page.goto('/today');
 
-  // Set capacity = 5h.
-  // Create three tasks with distinct titles.
-  // Select Top 3 in order.
-  // Create a time block for at least one task.
-  // Assert Scheduled and Remaining values.
-  // Click Commit Today.
-  // Change capacity to 4h or edit the time block.
-  // Assert "Plan changed after commitment" is visible.
-  // Complete one task.
-  // Reload.
-  // Assert tasks, priority order, time block, completion state,
-  // commitment and divergence are all still present.
-});
+  await page.getByLabel('Daily capacity minutes').fill('300');
+  await page.getByRole('button', { name: 'Save capacity' }).click();
 
-test('overbooking is visible but does not block commitment', async ({ page }) => {
-  // Set 1h capacity, schedule >1h, assert warning, Commit Today remains enabled.
+  for (const [title, minutes, priority] of [
+    ['Algebra', '60', 'p1_urgent'],
+    ['IELTS Writing', '45', 'p2_high'],
+    ['Chemistry', '90', 'p2_high'],
+  ] as const) {
+    await page.getByLabel('Task title').fill(title);
+    await page.getByLabel('Estimated minutes').fill(minutes);
+    await page.getByLabel('Priority').selectOption(priority);
+    await page.getByRole('button', { name: 'Add task' }).click();
+  }
+
+  await page.getByRole('button', { name: 'Add Algebra to Top 3' }).click();
+  await page.getByRole('button', { name: 'Add IELTS Writing to Top 3' }).click();
+  await page.getByRole('button', { name: 'Add Chemistry to Top 3' }).click();
+
+  await page.getByLabel('Time block task').selectOption({ label: 'Algebra' });
+  await page.getByLabel('Time block start').fill('17:00');
+  await page.getByLabel('Time block end').fill('18:00');
+  await page.getByRole('button', { name: 'Add time block' }).click();
+
+  await expect(page.getByText('Scheduled 60 min')).toBeVisible();
+  await expect(page.getByText('Remaining 240 min')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Commit Today' }).click();
+  await expect(page.getByText(/Committed at/)).toBeVisible();
+
+  await page.getByLabel('Daily capacity minutes').fill('240');
+  await page.getByRole('button', { name: 'Save capacity' }).click();
+  await expect(page.getByText('Plan changed after commitment')).toBeVisible();
+  await expect(page.getByText('Capacity changed')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Complete Algebra' }).click();
+  await expect(page.getByRole('button', { name: 'Reopen Algebra' })).toBeVisible();
+
+  await page.reload();
+
+  await expect(page.getByText(/Committed at/)).toBeVisible();
+  await expect(page.getByText('Plan changed after commitment')).toBeVisible();
+  await expect(page.getByText('Capacity changed')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Reopen Algebra' })).toBeVisible();
+  await expect(page.getByText('17:00–18:00')).toBeVisible();
+  await expect(page.getByText('Algebra')).toBeVisible();
 });
 ```
-
-Replace every comment with concrete Playwright actions before committing; no commented pseudo-steps remain in the final test.
 
 Run:
 
@@ -1068,19 +1117,38 @@ bunx playwright install chromium
 bun run e2e
 ```
 
-Expected before final wiring fixes: RED for missing/incorrect labels or behaviors; fix product code, not selectors, when accessibility labels are missing.
+Expected initially: RED on any missing behavior/accessibility contract. Fix product behavior/labels rather than weakening selectors.
 
-- [ ] **Step 2: Make E2E green**
+- [ ] **Step 2: Write the overbooking E2E**
 
-Run repeatedly until:
+Append:
 
-```bash
-bun run e2e
+```ts
+test('overbooking is visible but does not block commitment', async ({ page }) => {
+  await page.goto('/today');
+  await page.getByLabel('Daily capacity minutes').fill('60');
+  await page.getByRole('button', { name: 'Save capacity' }).click();
+
+  await page.getByLabel('Task title').fill('Long Study Block');
+  await page.getByLabel('Estimated minutes').fill('90');
+  await page.getByLabel('Priority').selectOption('p1_urgent');
+  await page.getByRole('button', { name: 'Add task' }).click();
+
+  await page.getByLabel('Time block task').selectOption({ label: 'Long Study Block' });
+  await page.getByLabel('Time block start').fill('09:00');
+  await page.getByLabel('Time block end').fill('10:30');
+  await page.getByRole('button', { name: 'Add time block' }).click();
+
+  await expect(page.getByText('Overbooked by 30 min')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Commit Today' })).toBeEnabled();
+  await page.getByRole('button', { name: 'Commit Today' }).click();
+  await expect(page.getByText(/Committed at/)).toBeVisible();
+});
 ```
 
-Expected: PASS for both scenarios.
+Run `bun run e2e`; expected: PASS for both tests.
 
-- [ ] **Step 3: Add clean-checkout CI**
+- [ ] **Step 3: Add CI**
 
 `.github/workflows/quality.yml`:
 
@@ -1106,7 +1174,7 @@ jobs:
       - run: bun run e2e
 ```
 
-- [ ] **Step 4: Run final local verification**
+- [ ] **Step 4: Run final verification**
 
 ```bash
 bun install --frozen-lockfile
@@ -1118,7 +1186,7 @@ bun run e2e
 git diff --exit-code
 ```
 
-Expected: every command exits 0 and the tree remains clean after verification.
+Every command exits 0; verification does not mutate committed source.
 
 - [ ] **Step 5: Commit**
 
@@ -1131,52 +1199,57 @@ git commit -m "test: verify today commitment journey end to end"
 
 ## Final Acceptance Checklist
 
-The slice is not complete until every item is true:
-
-- [ ] `/today` is the primary working screen.
-- [ ] Guest can create tasks with title, estimate and priority.
-- [ ] Capacity accepts 0–16h in 30-minute increments and warns above 12h without blocking.
-- [ ] Top priorities are ordered, unique and limited to three.
-- [ ] Time blocks are first-class entities and may overlap with a visible warning.
-- [ ] Scheduled minutes and remaining minutes are derived from blocks, not duplicated mutable totals.
-- [ ] Task completion does not fabricate actual focus time.
-- [ ] Guest can reopen a completed task.
-- [ ] `Commit Today` writes one immutable snapshot for the date.
-- [ ] Post-commit changes remain possible but visible as divergence.
-- [ ] Reload preserves plan, tasks, priorities, blocks, commitment and completion state.
-- [ ] Invalid/corrupt IndexedDB records are reported and not silently erased.
-- [ ] Product UI imports neither localStorage nor IndexedDB primitives.
-- [ ] The old monolithic persisted Zustand store is no longer part of the runtime.
-- [ ] Out-of-scope prototype features are not presented as completed Smart Planner parity.
-- [ ] Behavior-parity register reflects actual implementation truth.
-- [ ] `bun run typecheck` passes.
-- [ ] `bun run lint` passes.
-- [ ] `bun run test` passes.
-- [ ] `bun run build` passes.
-- [ ] `bun run e2e` passes.
-- [ ] CI passes from a clean checkout.
+- [ ] `/today` is the primary working route and `/` redirects to it.
+- [ ] Guest creates tasks with title, estimate and priority.
+- [ ] Capacity accepts 0–16h in 30-minute steps and warns above 12h without blocking.
+- [ ] Top priorities are unique, ordered and limited to three.
+- [ ] Time blocks are first-class entities; overlaps are visible warnings, not rejected plans.
+- [ ] Scheduled/remaining minutes derive from blocks.
+- [ ] Completion never fabricates actual focused time.
+- [ ] Completed tasks can be reopened according to scheduling evidence.
+- [ ] `Commit Today` writes one immutable snapshot per local date.
+- [ ] Post-commit edits remain possible and surface precise divergence categories.
+- [ ] Reload preserves tasks, priority order, blocks, completion, commitment and divergence.
+- [ ] Corrupt IndexedDB data is reported and left untouched.
+- [ ] UI imports no localStorage/IndexedDB/Supabase primitive.
+- [ ] Old persisted Zustand store is absent from final runtime.
+- [ ] Prototype Focus/Habits/Planner/etc. are not misrepresented as completed parity.
+- [ ] Parity register reflects implementation truth.
+- [ ] `bun run typecheck` PASS.
+- [ ] `bun run lint` PASS.
+- [ ] `bun run test` PASS.
+- [ ] `bun run build` PASS.
+- [ ] `bun run e2e` PASS.
+- [ ] Clean-checkout CI PASS.
 
 ## Self-Review Outcome
 
 ### Spec coverage
 
-- Foundation/tooling: Tasks 1 and 7.
-- Pure domain boundaries: Task 2.
-- IndexedDB guest persistence and data preservation: Task 3.
-- Today application service, capacity, Top 3, task lifecycle, time blocks: Task 4.
-- Low-friction workstation UI and persistence-error truthfulness: Task 5.
-- Minimal Commitment + divergence: Tasks 2, 4, 5 and E2E Task 7.
-- Smart Planner inheritance protection: Tasks 1 and 6 parity register.
-- No premature Focus/Habits/AI/PWA implementation: Task 6 removes misleading prototype runtime but preserves parity obligations.
+- Foundation/toolchain: Tasks 1 and 7.
+- Pure domain boundaries and local-date truth: Task 2.
+- IndexedDB validation, immutable commitment storage and atomic priorities: Task 3.
+- Today capacity/Top3/task/time-block/commitment business behavior: Task 4.
+- Low-friction UI plus persistence-error truthfulness: Task 5.
+- Prototype replacement without silent Smart Planner regression: Task 6 + parity register.
+- Acceptance journey and clean-checkout proof: Task 7.
 
 ### Placeholder scan
 
-The implementation tasks contain no `TBD`, `TODO`, `implement later`, or unspecified mandatory error-handling instruction. The E2E template explicitly requires replacing its explanatory comments with concrete actions before commit.
+No implementation task contains `TBD`, `TODO`, `implement later` or a mandatory behavior delegated to unspecified error handling. Test steps prescribe exact cases; explanatory setup comments in the plan must be replaced by real test code before each test commit.
 
 ### Type consistency
 
-The plan uses the same canonical names throughout: `capacityMinutes`, `DailyPriority`, `TimeBlock`, `DailyCommitmentSnapshot`, `TodayRepository`, `TodayService`, `TodayViewModel`, `Result<T>`. Old prototype names `capacityHours`, `top3ItemIds`, `scheduledDate` and `scheduledTimeStart` are intentionally not reused.
+Canonical names are consistent across tasks: `capacityMinutes`, `DailyPriority`, `TimeBlock`, `DailyCommitmentSnapshot`, `TodayRepository`, `TodayService`, `TodayViewModel`, `Result<T>`. Obsolete prototype names `capacityHours`, `top3ItemIds`, `scheduledDate` and `scheduledTimeStart` are not reused.
+
+### Dependency-order consistency
+
+Prototype dependencies remain installed until Task 6, after the new Today route passes typecheck/test/build. Cleanup therefore cannot break the prototype before the replacement exists.
+
+### Repository-interface consistency
+
+`getTimeBlock` supports updates by ID. `listTimeBlocksForWorkItem` supports truthful reopen behavior for today/future scheduling evidence. Persistence tests have a deterministic transaction-abort hook instead of an unspecified fault injection.
 
 ### Data-truth consistency
 
-The plan never equates scheduled minutes with actual focus minutes, never rewrites commitment history after a plan edit, and never treats persistence errors as empty data.
+Scheduled minutes never become actual focus minutes, commitment snapshots are never rewritten, and read/write failures never become empty-data success states.
