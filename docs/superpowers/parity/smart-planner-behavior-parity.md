@@ -7,7 +7,8 @@ This register prevents the rebuild from silently losing useful Smart Planner beh
 | Capability | Status | Evidence / destination |
 | --- | --- | --- |
 | Daily capacity 0–16h | PRESERVED | `src/domain/capacity` + Today UI |
-| Flexible planning / scheduling | PRESERVED | Single-day `TimeBlock`; multi-day planner remains NOT YET IMPLEMENTED |
+| Single-day TimeBlock scheduling | PRESERVED | `src/domain/time-blocks` + Today service; `TimeBlock` is canonical |
+| Multi-day Flexible Planner | NOT YET IMPLEMENTED | Planner |
 | Schedule forecasting | NOT YET IMPLEMENTED | Projects/Planner |
 | Focus timer / preferences / transitions | NOT YET IMPLEMENTED | Focus Station |
 | Habit tracking | NOT YET IMPLEMENTED | Habits & Routines |
@@ -15,8 +16,9 @@ This register prevents the rebuild from silently losing useful Smart Planner beh
 | Progress analytics | NOT YET IMPLEMENTED | Review/Analytics |
 | Weekly metrics / review | NOT YET IMPLEMENTED | Shutdown + Weekly Review |
 | PWA / reminders / Web Push | NOT YET IMPLEMENTED | PWA/Push |
-| Backup / storage safety / migration | SUPERSEDED | Validated IndexedDB guest persistence now; legacy import/export remains NOT YET IMPLEMENTED |
-| Daily commitment snapshot | SUPERSEDED | Immutable snapshot + divergence |
+| Safe guest persistence | PRESERVED | Validated IndexedDB guest repository (`src/infrastructure/persistence/guest`) |
+| Backup / import / export / legacy migration | NOT YET IMPLEMENTED | Backup/Migration |
+| Daily commitment snapshot | SUPERSEDED | Immutable snapshot + divergence; replaces implicit same-day overwrite |
 
 ## Rules
 
