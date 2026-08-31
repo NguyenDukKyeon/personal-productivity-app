@@ -25,7 +25,9 @@ async function createScheduledAlgebra(page: Page) {
 
 test('guest records a scheduled task as focus evidence after pause, distraction and reload', async ({ page }) => {
   await createScheduledAlgebra(page);
-  await page.getByRole('link', { name: 'Start focus Algebra' }).click();
+  const startLink = page.getByRole('link', { name: 'Start focus Algebra' });
+  await expect(startLink).toHaveAttribute('href', /\/focus\?workItemId=.+&timeBlockId=.+/);
+  await startLink.click();
   await expect(page).toHaveURL(/\/focus\?workItemId=.+&timeBlockId=.+/);
   await expect(page.getByRole('heading', { name: 'Focus Station' })).toBeVisible();
   await expect(page.getByLabel('Focus task')).toHaveValue(/./);
@@ -65,7 +67,9 @@ test('guest records a scheduled task as focus evidence after pause, distraction 
 
 test('running focus reconstructs elapsed time after reload', async ({ page }) => {
   await createScheduledAlgebra(page);
-  await page.getByRole('link', { name: 'Start focus Algebra' }).click();
+  const startLink = page.getByRole('link', { name: 'Start focus Algebra' });
+  await expect(startLink).toHaveAttribute('href', /\/focus\?workItemId=.+&timeBlockId=.+/);
+  await startLink.click();
   await page.getByRole('button', { name: 'Start focus' }).click();
   await expect(page.getByRole('button', { name: 'Pause' })).toBeVisible();
 
