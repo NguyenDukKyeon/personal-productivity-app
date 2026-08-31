@@ -1,7 +1,7 @@
-import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
+﻿import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 
 export const GUEST_DB_NAME = 'personal-productivity-guest';
-export const GUEST_DB_VERSION = 2;
+export const GUEST_DB_VERSION = 3;
 
 export interface GuestTodayDB extends DBSchema {
   workItems: {
@@ -41,6 +41,20 @@ export interface GuestTodayDB extends DBSchema {
     key: string;
     value: unknown;
     indexes: { focusSessionId: string };
+  };
+  habits: {
+    key: string;
+    value: unknown;
+    indexes: { status: string; routineId: string };
+  };
+  habitCheckIns: {
+    key: string;
+    value: unknown;
+    indexes: { habitId: string; date: string; habitId_date: [string, string] };
+  };
+  routines: {
+    key: string;
+    value: unknown;
   };
 }
 
@@ -87,6 +101,23 @@ export async function openGuestTodayDb(
       if (!db.objectStoreNames.contains('distractions')) {
         const store = db.createObjectStore('distractions', { keyPath: 'id' });
         store.createIndex('focusSessionId', 'focusSessionId');
+      }
+
+      if (!db.objectStoreNames.contains('habits')) {
+        const store = db.createObjectStore('habits', { keyPath: 'id' });
+        store.createIndex('status', 'status');
+        store.createIndex('routineId', 'routineId');
+      }
+
+      if (!db.objectStoreNames.contains('habitCheckIns')) {
+        const store = db.createObjectStore('habitCheckIns', { keyPath: 'id' });
+        store.createIndex('habitId', 'habitId');
+        store.createIndex('date', 'date');
+        store.createIndex('habitId_date', ['habitId', 'date'], { unique: true });
+      }
+
+      if (!db.objectStoreNames.contains('routines')) {
+        db.createObjectStore('routines', { keyPath: 'id' });
       }
     },
   });
