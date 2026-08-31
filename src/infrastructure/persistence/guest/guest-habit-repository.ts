@@ -1,7 +1,8 @@
 ﻿import type { IDBPDatabase } from 'idb';
 import { z } from 'zod';
-import { type Habit, type HabitStatus } from '@/domain/habits/habit';
-import { type HabitCheckIn, type HabitCheckInKind } from '@/domain/habits/habit-check-in';
+import { type Habit } from '@/domain/habits/habit';
+import { type HabitCheckIn } from '@/domain/habits/habit-check-in';
+import { type HabitSchedule, type WeekdayNumber } from '@/domain/habits/habit-schedule';
 import { type Routine } from '@/domain/habits/routine';
 import { parseLocalDateKey } from '@/domain/shared/local-date';
 import { err, ok, type Result } from '@/domain/shared/result';
@@ -16,15 +17,25 @@ const CORRUPT_RECORD_MESSAGE = 'Stored data is invalid and was left untouched.';
 const READ_FAILED_MESSAGE = 'Failed to read guest habit data.';
 const WRITE_FAILED_MESSAGE = 'Failed to write guest habit data.';
 
-const habitScheduleSchema = z.discriminatedUnion('kind', [
+const weekdayNumberSchema: z.ZodType<WeekdayNumber> = z.union([
+  z.literal(1),
+  z.literal(2),
+  z.literal(3),
+  z.literal(4),
+  z.literal(5),
+  z.literal(6),
+  z.literal(7),
+]);
+
+const habitScheduleSchema: z.ZodType<HabitSchedule> = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('daily') }),
   z.object({
     kind: z.literal('weekdays'),
-    weekdays: z.array(z.number().int().min(1).max(7)).min(1),
+    weekdays: z.array(weekdayNumberSchema).min(1),
   }),
 ]);
 
-const habitSchema = z.object({
+const habitSchema: z.ZodType<Habit> = z.object({
   id: z.string().min(1),
   title: z.string().min(1).max(120),
   description: z.string().max(500),
@@ -37,7 +48,7 @@ const habitSchema = z.object({
   updatedAt: z.string(),
 });
 
-const habitCheckInSchema = z.object({
+const habitCheckInSchema: z.ZodType<HabitCheckIn> = z.object({
   id: z.string().min(1),
   habitId: z.string().min(1),
   date: z.string(),
@@ -47,7 +58,7 @@ const habitCheckInSchema = z.object({
   updatedAt: z.string(),
 });
 
-const routineSchema = z.object({
+const routineSchema: z.ZodType<Routine> = z.object({
   id: z.string().min(1),
   name: z.string().min(1).max(60),
   contextLabel: z.string().max(60),

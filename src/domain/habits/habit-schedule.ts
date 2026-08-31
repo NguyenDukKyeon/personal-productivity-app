@@ -14,32 +14,27 @@ export interface WeekdaySchedule {
 
 export type HabitSchedule = DailySchedule | WeekdaySchedule;
 
-export type HabitScheduleError =
-  | 'invalid_schedule'
-  | 'empty_weekdays'
-  | 'invalid_weekday_number';
-
-export function createDailySchedule(): Result<DailySchedule, HabitScheduleError> {
+export function createDailySchedule(): Result<DailySchedule> {
   return ok({ kind: 'daily' });
 }
 
 export function createWeekdaySchedule(
   weekdays: number[],
-): Result<WeekdaySchedule, HabitScheduleError> {
+): Result<WeekdaySchedule> {
   if (!Array.isArray(weekdays) || weekdays.length === 0) {
-    return err('empty_weekdays');
+    return err('empty_weekdays', 'At least one weekday must be selected.');
   }
 
   const validSet = new Set<WeekdayNumber>();
   for (const day of weekdays) {
     if (!Number.isInteger(day) || day < 1 || day > 7) {
-      return err('invalid_weekday_number');
+      return err('invalid_weekday_number', 'Weekday must be an integer between 1 and 7.');
     }
     validSet.add(day as WeekdayNumber);
   }
 
   if (validSet.size === 0) {
-    return err('empty_weekdays');
+    return err('empty_weekdays', 'At least one valid weekday must be selected.');
   }
 
   const sorted = Array.from(validSet).sort((a, b) => a - b);

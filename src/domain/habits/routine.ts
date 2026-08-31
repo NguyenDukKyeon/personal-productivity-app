@@ -9,12 +9,6 @@ export interface Routine {
   updatedAt: string;
 }
 
-export type RoutineError =
-  | 'invalid_routine_id'
-  | 'empty_name'
-  | 'name_too_long'
-  | 'context_label_too_long';
-
 export interface CreateRoutineDomainInput {
   id: string;
   name: string;
@@ -48,17 +42,21 @@ function deduplicateHabitIds(ids?: string[]): string[] {
 
 export function createRoutine(
   input: CreateRoutineDomainInput,
-): Result<Routine, RoutineError> {
+): Result<Routine> {
   const id = input.id.trim();
-  if (!id) return err('invalid_routine_id');
+  if (!id) return err('invalid_routine_id', 'Routine ID cannot be empty.');
 
   const name = input.name.trim();
-  if (!name) return err('empty_name');
-  if (name.length > MAX_NAME_LENGTH) return err('name_too_long');
+  if (!name) return err('empty_name', 'Routine name cannot be empty.');
+  if (name.length > MAX_NAME_LENGTH)
+    return err('name_too_long', `Routine name cannot exceed ${MAX_NAME_LENGTH} characters.`);
 
   const contextLabel = (input.contextLabel ?? '').trim();
   if (contextLabel.length > MAX_CONTEXT_LABEL_LENGTH)
-    return err('context_label_too_long');
+    return err(
+      'context_label_too_long',
+      `Context label cannot exceed ${MAX_CONTEXT_LABEL_LENGTH} characters.`,
+    );
 
   const habitIds = deduplicateHabitIds(input.habitIds);
   const now = input.nowIso ?? new Date().toISOString();
@@ -77,17 +75,21 @@ export function updateRoutine(
   routine: Routine,
   patch: UpdateRoutineDomainPatch,
   nowIso?: string,
-): Result<Routine, RoutineError> {
+): Result<Routine> {
   const name = patch.name !== undefined ? patch.name.trim() : routine.name;
-  if (!name) return err('empty_name');
-  if (name.length > MAX_NAME_LENGTH) return err('name_too_long');
+  if (!name) return err('empty_name', 'Routine name cannot be empty.');
+  if (name.length > MAX_NAME_LENGTH)
+    return err('name_too_long', `Routine name cannot exceed ${MAX_NAME_LENGTH} characters.`);
 
   const contextLabel =
     patch.contextLabel !== undefined
       ? patch.contextLabel.trim()
       : routine.contextLabel;
   if (contextLabel.length > MAX_CONTEXT_LABEL_LENGTH)
-    return err('context_label_too_long');
+    return err(
+      'context_label_too_long',
+      `Context label cannot exceed ${MAX_CONTEXT_LABEL_LENGTH} characters.`,
+    );
 
   const habitIds =
     patch.habitIds !== undefined

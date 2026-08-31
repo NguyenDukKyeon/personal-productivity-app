@@ -1,7 +1,7 @@
 ﻿'use client';
 
 import { useState } from 'react';
-import { Archive, Check, ChevronRight, History, MoreVertical, Pencil, RotateCcw, Sparkles, X } from 'lucide-react';
+import { Archive, Check, History, MoreVertical, Pencil, RotateCcw, Sparkles } from 'lucide-react';
 import type { Habit } from '@/domain/habits/habit';
 import type { HabitCheckInKind } from '@/domain/habits/habit-check-in';
 import { Button } from '@/components/ui/Button';
@@ -36,7 +36,7 @@ export function HabitTodayCard({
   onArchive,
   onViewHistory,
 }: HabitTodayCardProps) {
-  const { habit, checkIn, isRecovery, isScheduledToday, lastScheduledDate } = item;
+  const { habit, checkIn, isRecovery, lastScheduledDate } = item;
   const [showSkipInput, setShowSkipInput] = useState(false);
   const [skipReason, setSkipReason] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);

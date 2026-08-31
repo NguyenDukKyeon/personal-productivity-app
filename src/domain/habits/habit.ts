@@ -16,15 +16,6 @@ export interface Habit {
   updatedAt: string;
 }
 
-export type HabitError =
-  | 'invalid_habit_id'
-  | 'empty_title'
-  | 'title_too_long'
-  | 'empty_minimum_version'
-  | 'minimum_version_too_long'
-  | 'cue_too_long'
-  | 'description_too_long';
-
 export interface CreateHabitDomainInput {
   id: string;
   title: string;
@@ -53,25 +44,34 @@ const MAX_DESCRIPTION_LENGTH = 500;
 
 export function createHabit(
   input: CreateHabitDomainInput,
-): Result<Habit, HabitError> {
+): Result<Habit> {
   const id = input.id.trim();
-  if (!id) return err('invalid_habit_id');
+  if (!id) return err('invalid_habit_id', 'Habit ID cannot be empty.');
 
   const title = input.title.trim();
-  if (!title) return err('empty_title');
-  if (title.length > MAX_TITLE_LENGTH) return err('title_too_long');
+  if (!title) return err('empty_title', 'Habit title cannot be empty.');
+  if (title.length > MAX_TITLE_LENGTH)
+    return err('title_too_long', `Habit title cannot exceed ${MAX_TITLE_LENGTH} characters.`);
 
   const minimumVersion = input.minimumVersion.trim();
-  if (!minimumVersion) return err('empty_minimum_version');
+  if (!minimumVersion)
+    return err('empty_minimum_version', 'Minimum viable version cannot be empty.');
   if (minimumVersion.length > MAX_MINIMUM_VERSION_LENGTH)
-    return err('minimum_version_too_long');
+    return err(
+      'minimum_version_too_long',
+      `Minimum viable version cannot exceed ${MAX_MINIMUM_VERSION_LENGTH} characters.`,
+    );
 
   const cue = (input.cue ?? '').trim();
-  if (cue.length > MAX_CUE_LENGTH) return err('cue_too_long');
+  if (cue.length > MAX_CUE_LENGTH)
+    return err('cue_too_long', `Cue cannot exceed ${MAX_CUE_LENGTH} characters.`);
 
   const description = (input.description ?? '').trim();
   if (description.length > MAX_DESCRIPTION_LENGTH)
-    return err('description_too_long');
+    return err(
+      'description_too_long',
+      `Description cannot exceed ${MAX_DESCRIPTION_LENGTH} characters.`,
+    );
 
   const now = input.nowIso ?? new Date().toISOString();
 
@@ -93,28 +93,37 @@ export function updateHabit(
   habit: Habit,
   patch: UpdateHabitDomainPatch,
   nowIso?: string,
-): Result<Habit, HabitError> {
+): Result<Habit> {
   const title = patch.title !== undefined ? patch.title.trim() : habit.title;
-  if (!title) return err('empty_title');
-  if (title.length > MAX_TITLE_LENGTH) return err('title_too_long');
+  if (!title) return err('empty_title', 'Habit title cannot be empty.');
+  if (title.length > MAX_TITLE_LENGTH)
+    return err('title_too_long', `Habit title cannot exceed ${MAX_TITLE_LENGTH} characters.`);
 
   const minimumVersion =
     patch.minimumVersion !== undefined
       ? patch.minimumVersion.trim()
       : habit.minimumVersion;
-  if (!minimumVersion) return err('empty_minimum_version');
+  if (!minimumVersion)
+    return err('empty_minimum_version', 'Minimum viable version cannot be empty.');
   if (minimumVersion.length > MAX_MINIMUM_VERSION_LENGTH)
-    return err('minimum_version_too_long');
+    return err(
+      'minimum_version_too_long',
+      `Minimum viable version cannot exceed ${MAX_MINIMUM_VERSION_LENGTH} characters.`,
+    );
 
   const cue = patch.cue !== undefined ? patch.cue.trim() : habit.cue;
-  if (cue.length > MAX_CUE_LENGTH) return err('cue_too_long');
+  if (cue.length > MAX_CUE_LENGTH)
+    return err('cue_too_long', `Cue cannot exceed ${MAX_CUE_LENGTH} characters.`);
 
   const description =
     patch.description !== undefined
       ? patch.description.trim()
       : habit.description;
   if (description.length > MAX_DESCRIPTION_LENGTH)
-    return err('description_too_long');
+    return err(
+      'description_too_long',
+      `Description cannot exceed ${MAX_DESCRIPTION_LENGTH} characters.`,
+    );
 
   const schedule = patch.schedule ?? habit.schedule;
   const routineId =

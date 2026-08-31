@@ -5,7 +5,7 @@ import { Calendar, Check, History, Sparkles, X } from 'lucide-react';
 import type { Habit } from '@/domain/habits/habit';
 import type { HabitCheckIn } from '@/domain/habits/habit-check-in';
 import { calculateHabitMetrics } from '@/domain/habits/habit-metrics';
-import { parseLocalDateKey, toLocalDateKey } from '@/domain/shared/local-date';
+import { toLocalDateKey } from '@/domain/shared/local-date';
 import type { Result } from '@/domain/shared/result';
 import { Button } from '@/components/ui/Button';
 
@@ -116,7 +116,7 @@ export function HabitHistoryModal({
                     <span className="font-medium text-slate-900 dark:text-white">{record.date}</span>
                     {record.note && (
                       <span className="text-slate-500 dark:text-slate-400 italic">
-                        "{record.note}"
+                        &quot;{record.note}&quot;
                       </span>
                     )}
                   </div>

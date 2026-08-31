@@ -1,9 +1,7 @@
 ﻿'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import type { Habit } from '@/domain/habits/habit';
-import type { HabitCheckIn, HabitCheckInKind } from '@/domain/habits/habit-check-in';
-import type { Routine } from '@/domain/habits/routine';
+import type { HabitCheckInKind } from '@/domain/habits/habit-check-in';
 import type { Result } from '@/domain/shared/result';
 import type {
   CreateHabitInput,

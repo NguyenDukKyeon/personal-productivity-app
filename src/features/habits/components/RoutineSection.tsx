@@ -5,7 +5,6 @@ import { ChevronDown, ChevronUp, Layers, Trash2 } from 'lucide-react';
 import type { Habit } from '@/domain/habits/habit';
 import type { HabitCheckInKind } from '@/domain/habits/habit-check-in';
 import type { Routine } from '@/domain/habits/routine';
-import { Button } from '@/components/ui/Button';
 import type { HabitTodayItem } from '../application/habit-service';
 import { HabitTodayCard } from './HabitTodayCard';
 

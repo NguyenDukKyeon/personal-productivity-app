@@ -1,10 +1,8 @@
-﻿import { render, screen, waitFor } from '@testing-library/react';
+﻿import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import type { Habit } from '@/domain/habits/habit';
-import type { HabitCheckIn } from '@/domain/habits/habit-check-in';
-import type { Routine } from '@/domain/habits/routine';
-import { err, ok, type Result } from '@/domain/shared/result';
+import { err, ok } from '@/domain/shared/result';
 import type {
   HabitsViewModel,
   HabitService,
@@ -64,7 +62,7 @@ function sampleView(overrides: Partial<HabitsViewModel> = {}): HabitsViewModel {
 }
 
 function createFakeService(overrides: Partial<HabitService> = {}): HabitService {
-  let currentView = sampleView();
+  const currentView = sampleView();
   return {
     getHabitsView: vi.fn(() => Promise.resolve(ok(currentView))),
     createHabit: vi.fn((input) => {

@@ -13,11 +13,6 @@ export interface HabitCheckIn {
   updatedAt: string;
 }
 
-export type HabitCheckInError =
-  | 'invalid_habit_id'
-  | 'invalid_date'
-  | 'note_too_long';
-
 export interface CreateCheckInDomainInput {
   id?: string;
   habitId: string;
@@ -40,15 +35,17 @@ export function generateCheckInId(habitId: string, date: string): string {
 
 export function createHabitCheckIn(
   input: CreateCheckInDomainInput,
-): Result<HabitCheckIn, HabitCheckInError> {
+): Result<HabitCheckIn> {
   const habitId = input.habitId.trim();
-  if (!habitId) return err('invalid_habit_id');
+  if (!habitId) return err('invalid_habit_id', 'Habit ID cannot be empty.');
 
   const date = input.date.trim();
-  if (!parseLocalDateKey(date)) return err('invalid_date');
+  if (!parseLocalDateKey(date))
+    return err('invalid_date', 'Date must be a valid YYYY-MM-DD calendar date.');
 
   const note = (input.note ?? '').trim();
-  if (note.length > MAX_NOTE_LENGTH) return err('note_too_long');
+  if (note.length > MAX_NOTE_LENGTH)
+    return err('note_too_long', `Note cannot exceed ${MAX_NOTE_LENGTH} characters.`);
 
   const id = input.id?.trim() || generateCheckInId(habitId, date);
   const now = input.nowIso ?? new Date().toISOString();
@@ -68,10 +65,11 @@ export function updateHabitCheckIn(
   checkIn: HabitCheckIn,
   patch: UpdateCheckInDomainPatch,
   nowIso?: string,
-): Result<HabitCheckIn, HabitCheckInError> {
+): Result<HabitCheckIn> {
   const kind = patch.kind ?? checkIn.kind;
   const note = patch.note !== undefined ? patch.note.trim() : checkIn.note;
-  if (note.length > MAX_NOTE_LENGTH) return err('note_too_long');
+  if (note.length > MAX_NOTE_LENGTH)
+    return err('note_too_long', `Note cannot exceed ${MAX_NOTE_LENGTH} characters.`);
 
   const now = nowIso ?? new Date().toISOString();
 

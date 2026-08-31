@@ -4,7 +4,6 @@ import { useState } from 'react';
 import {
   Archive,
   Calendar,
-  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Layers,
@@ -13,14 +12,12 @@ import {
   Sparkles,
 } from 'lucide-react';
 import type { Habit } from '@/domain/habits/habit';
-import type { Routine } from '@/domain/habits/routine';
 import { parseLocalDateKey, toLocalDateKey } from '@/domain/shared/local-date';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import type {
   CreateHabitInput,
-  CreateRoutineInput,
   HabitService,
   UpdateHabitInput,
 } from '../application/habit-service';
