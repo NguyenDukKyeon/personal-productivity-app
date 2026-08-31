@@ -30,3 +30,17 @@ export function parseLocalDateKey(value: string): LocalDateParts | null {
 
   return { year, month, day };
 }
+
+/**
+ * Shift a YYYY-MM-DD calendar key by a whole number of days using
+ * calendar arithmetic (not timezone-dependent Date local getters).
+ */
+export function shiftLocalDateKey(dateKey: string, offsetDays: number): string | null {
+  const parts = parseLocalDateKey(dateKey);
+  if (!parts) return null;
+  const utc = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + offsetDays));
+  const year = utc.getUTCFullYear();
+  const month = String(utc.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(utc.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
