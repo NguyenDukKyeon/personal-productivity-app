@@ -381,3 +381,86 @@ it('handles concurrent start requests across service instances sharing database'
   expect(view.activeSession).not.toBeNull();
   expect(['session-1', 'session-2']).toContain(view.activeSession?.id);
 });
+
+it('rejects pause when clock moved backward and leaves running session unchanged', async () => {
+  const harness = await createHarness();
+  const { item } = await seedScheduledWork(harness);
+  harness.setNow('2026-08-31T08:00:00.000Z');
+  const started = unwrap(
+    await harness.service.startSession({
+      workItemId: item.id,
+      timeBlockId: null,
+      mode: 'countdown',
+      plannedDurationMinutes: 25,
+    }),
+  );
+
+  // Attempt to pause in the past (before startedAt / runningSince)
+  harness.setNow('2026-08-31T07:55:00.000Z');
+  const pauseRes = await harness.service.pauseSession(started.id);
+  expect(pauseRes.ok).toBe(false);
+  if (!pauseRes.ok) expect(pauseRes.code).toBe('invalid_transition');
+
+  // Verify running session unchanged
+  const view = unwrap(await harness.service.getFocusView());
+  expect(view.activeSession?.status).toBe('running');
+  expect(view.activeSession?.accumulatedFocusMs).toBe(0);
+});
+
+it('rejects resume when clock moved backward and leaves paused session unchanged', async () => {
+  const harness = await createHarness();
+  const { item } = await seedScheduledWork(harness);
+  harness.setNow('2026-08-31T08:00:00.000Z');
+  const started = unwrap(
+    await harness.service.startSession({
+      workItemId: item.id,
+      timeBlockId: null,
+      mode: 'countdown',
+      plannedDurationMinutes: 25,
+    }),
+  );
+
+  harness.setNow('2026-08-31T08:10:00.000Z');
+  unwrap(await harness.service.pauseSession(started.id));
+
+  // Attempt to resume at 08:05 (before updatedAt 08:10)
+  harness.setNow('2026-08-31T08:05:00.000Z');
+  const resumeRes = await harness.service.resumeSession(started.id);
+  expect(resumeRes.ok).toBe(false);
+  if (!resumeRes.ok) expect(resumeRes.code).toBe('invalid_transition');
+
+  // Verify paused session unchanged
+  const view = unwrap(await harness.service.getFocusView());
+  expect(view.activeSession?.status).toBe('paused');
+  expect(view.activeSession?.accumulatedFocusMs).toBe(10 * 60_000);
+});
+
+it('rejects finish and abandon when clock moved backward leaving session active and actualMinutes unchanged', async () => {
+  const harness = await createHarness();
+  const { item } = await seedScheduledWork(harness);
+  harness.setNow('2026-08-31T08:00:00.000Z');
+  const started = unwrap(
+    await harness.service.startSession({
+      workItemId: item.id,
+      timeBlockId: null,
+      mode: 'countdown',
+      plannedDurationMinutes: 25,
+    }),
+  );
+
+  // Attempt finish in the past
+  harness.setNow('2026-08-31T07:55:00.000Z');
+  const finishRes = await harness.service.finishSession(started.id, {});
+  expect(finishRes.ok).toBe(false);
+  if (!finishRes.ok) expect(finishRes.code).toBe('invalid_transition');
+
+  // Attempt abandon in the past
+  const abandonRes = await harness.service.abandonSession(started.id);
+  expect(abandonRes.ok).toBe(false);
+  if (!abandonRes.ok) expect(abandonRes.code).toBe('invalid_transition');
+
+  // Verify session stays active and workItem actualMinutes stays 0
+  const view = unwrap(await harness.service.getFocusView());
+  expect(view.activeSession?.status).toBe('running');
+  expect(unwrap(await harness.todayRepository.getWorkItem(item.id))?.actualMinutes).toBe(0);
+});

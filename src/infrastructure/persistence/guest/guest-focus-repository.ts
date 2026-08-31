@@ -183,6 +183,10 @@ export class GuestFocusRepository implements FocusRepository {
   }
 
   async saveSession(session: FocusSession): Promise<Result<void>> {
+    const valid = validateFocusSession(session);
+    if (!valid.ok) {
+      return valid;
+    }
     try {
       await this.db.put('focusSessions', session);
       return ok(undefined);
@@ -192,6 +196,10 @@ export class GuestFocusRepository implements FocusRepository {
   }
 
   async completeSessionWithWorkItem(session: FocusSession, workItem: WorkItem): Promise<Result<void>> {
+    const validSession = validateFocusSession(session);
+    if (!validSession.ok) {
+      return validSession;
+    }
     const validWorkItem = validateWorkItem(workItem);
     if (!validWorkItem.ok) {
       return err('corrupt_record', CORRUPT_RECORD_MESSAGE);

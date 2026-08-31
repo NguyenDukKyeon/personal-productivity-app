@@ -248,4 +248,74 @@ it('rejects corrupt session combinations during validation', () => {
     focusedDurationMs: 400_000,
   };
   expect(validateFocusSession(accumulatedExceedsFinalized).ok).toBe(false);
+
+  const runningImpossibleAccumulated: FocusSession = {
+    ...running,
+    startedAt: '2026-08-31T08:00:00.000Z',
+    updatedAt: '2026-08-31T08:10:00.000Z', // 10 min window = 600,000 ms
+    runningSince: '2026-08-31T08:10:00.000Z',
+    accumulatedFocusMs: 5 * 3600_000, // 5 hours -> impossible
+    status: 'running',
+  };
+  const resRunning = validateFocusSession(runningImpossibleAccumulated);
+  expect(resRunning.ok).toBe(false);
+  if (!resRunning.ok) expect(resRunning.code).toBe('corrupt_record');
+
+  const pausedImpossibleAccumulated: FocusSession = {
+    ...running,
+    startedAt: '2026-08-31T08:00:00.000Z',
+    updatedAt: '2026-08-31T08:10:00.000Z', // 10 min window = 600,000 ms
+    runningSince: null,
+    accumulatedFocusMs: 5 * 3600_000, // 5 hours -> impossible
+    status: 'paused',
+  };
+  const resPaused = validateFocusSession(pausedImpossibleAccumulated);
+  expect(resPaused.ok).toBe(false);
+  if (!resPaused.ok) expect(resPaused.code).toBe('corrupt_record');
+
+  const updatedAtBeforeStartedAt: FocusSession = {
+    ...running,
+    startedAt: '2026-08-31T08:00:00.000Z',
+    updatedAt: '2026-08-31T07:50:00.000Z',
+    createdAt: '2026-08-31T07:50:00.000Z',
+    runningSince: '2026-08-31T08:00:00.000Z',
+  };
+  expect(validateFocusSession(updatedAtBeforeStartedAt).ok).toBe(false);
+});
+
+it('rejects live clock rollback during pause, resume, finish and abandon transitions', () => {
+  const running = start(); // startedAt = T0 (08:00), runningSince = T0, updatedAt = T0
+
+  // Pause with clock moved backward before runningSince (07:59 < 08:00)
+  const pausePast = pauseFocusSession(running, '2026-08-31T07:59:00.000Z');
+  expect(pausePast.ok).toBe(false);
+  if (!pausePast.ok) expect(pausePast.code).toBe('invalid_transition');
+
+  // Pause at 08:10 (valid), now updatedAt is 08:10
+  const paused = unwrap(pauseFocusSession(running, T10));
+
+  // Resume with clock moved backward before updatedAt (08:05 < 08:10)
+  const resumePast = resumeFocusSession(paused, '2026-08-31T08:05:00.000Z');
+  expect(resumePast.ok).toBe(false);
+  if (!resumePast.ok) expect(resumePast.code).toBe('invalid_transition');
+
+  // Finish running session with clock before runningSince
+  const finishRunningPast = completeFocusSession(running, '2026-08-31T07:59:00.000Z');
+  expect(finishRunningPast.ok).toBe(false);
+  if (!finishRunningPast.ok) expect(finishRunningPast.code).toBe('invalid_transition');
+
+  // Abandon running session with clock before runningSince
+  const abandonRunningPast = abandonFocusSession(running, '2026-08-31T07:59:00.000Z');
+  expect(abandonRunningPast.ok).toBe(false);
+  if (!abandonRunningPast.ok) expect(abandonRunningPast.code).toBe('invalid_transition');
+
+  // Finish paused session with clock before updatedAt
+  const finishPausedPast = completeFocusSession(paused, '2026-08-31T08:05:00.000Z');
+  expect(finishPausedPast.ok).toBe(false);
+  if (!finishPausedPast.ok) expect(finishPausedPast.code).toBe('invalid_transition');
+
+  // Abandon paused session with clock before updatedAt
+  const abandonPausedPast = abandonFocusSession(paused, '2026-08-31T08:05:00.000Z');
+  expect(abandonPausedPast.ok).toBe(false);
+  if (!abandonPausedPast.ok) expect(abandonPausedPast.code).toBe('invalid_transition');
 });

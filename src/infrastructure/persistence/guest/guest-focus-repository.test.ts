@@ -133,6 +133,114 @@ it('returns corrupt_record when stored session has semantically inverted timing 
   expect(await getRaw(name, 'focusSessions', 'corrupt-timing-session')).toEqual(semanticallyCorruptRow);
 });
 
+it('returns corrupt_record when stored running session has impossible accumulatedFocusMs leaving raw row untouched', async () => {
+  const name = dbName();
+  const repository = await createGuestFocusRepository({ databaseName: name });
+  const rawRunning = {
+    ...runningSession,
+    id: 'corrupt-accum-running',
+    startedAt: '2026-08-31T08:00:00.000Z',
+    updatedAt: '2026-08-31T08:10:00.000Z', // 10 minutes interval
+    runningSince: '2026-08-31T08:10:00.000Z',
+    accumulatedFocusMs: 5 * 3600_000, // 5 hours (impossible for 10 min interval)
+    status: 'running',
+  };
+  await putRaw(name, 'focusSessions', rawRunning);
+
+  const getResult = await repository.getSession('corrupt-accum-running');
+  expect(getResult.ok).toBe(false);
+  if (!getResult.ok) expect(getResult.code).toBe('corrupt_record');
+
+  const activeResult = await repository.getActiveSession();
+  expect(activeResult.ok).toBe(false);
+  if (!activeResult.ok) expect(activeResult.code).toBe('corrupt_record');
+
+  expect(await getRaw(name, 'focusSessions', 'corrupt-accum-running')).toEqual(rawRunning);
+});
+
+it('returns corrupt_record when stored paused session has impossible accumulatedFocusMs leaving raw row untouched', async () => {
+  const name = dbName();
+  const repository = await createGuestFocusRepository({ databaseName: name });
+  const rawPaused = {
+    ...runningSession,
+    id: 'corrupt-accum-paused',
+    startedAt: '2026-08-31T08:00:00.000Z',
+    updatedAt: '2026-08-31T08:10:00.000Z', // 10 minutes interval
+    runningSince: null,
+    accumulatedFocusMs: 5 * 3600_000, // 5 hours
+    status: 'paused',
+  };
+  await putRaw(name, 'focusSessions', rawPaused);
+
+  const getResult = await repository.getSession('corrupt-accum-paused');
+  expect(getResult.ok).toBe(false);
+  if (!getResult.ok) expect(getResult.code).toBe('corrupt_record');
+
+  const activeResult = await repository.getActiveSession();
+  expect(activeResult.ok).toBe(false);
+  if (!activeResult.ok) expect(activeResult.code).toBe('corrupt_record');
+
+  expect(await getRaw(name, 'focusSessions', 'corrupt-accum-paused')).toEqual(rawPaused);
+});
+
+it('rejects direct saveSession when session is semantically invalid and does not write to IndexedDB', async () => {
+  const name = dbName();
+  const repository = await createGuestFocusRepository({ databaseName: name });
+  const invalidSession: FocusSession = {
+    ...runningSession,
+    id: 'invalid-session-save',
+    startedAt: '2026-08-31T08:00:00.000Z',
+    updatedAt: '2026-08-31T08:10:00.000Z',
+    runningSince: '2026-08-31T07:50:00.000Z', // inverted runningSince < startedAt
+  };
+
+  const result = await repository.saveSession(invalidSession);
+  expect(result.ok).toBe(false);
+  if (!result.ok) expect(result.code).toBe('corrupt_record');
+
+  expect(await getRaw(name, 'focusSessions', 'invalid-session-save')).toBeUndefined();
+});
+
+it('rejects completeSessionWithWorkItem when FocusSession is invalid before opening transaction', async () => {
+  const name = dbName();
+  const repository = await createGuestFocusRepository({ databaseName: name });
+  const item: WorkItem = {
+    id: 'w1',
+    title: 'Algebra',
+    notes: '',
+    type: 'task',
+    estimatedMinutes: 60,
+    actualMinutes: 0,
+    priority: 'p1_urgent',
+    status: 'backlog',
+    completedAt: null,
+    createdAt: '2026-08-31T08:00:00.000Z',
+    updatedAt: '2026-08-31T08:00:00.000Z',
+    projectId: null,
+  };
+  await putRaw(name, 'workItems', item);
+
+  const invalidCompletedSession: FocusSession = {
+    ...runningSession,
+    id: 'invalid-complete-session',
+    status: 'completed',
+    runningSince: null,
+    startedAt: '2026-08-31T08:00:00.000Z',
+    endedAt: '2026-08-31T08:10:00.000Z',
+    focusedDurationMs: 3600_000, // 60 min > 10 min wall clock
+  };
+
+  const result = await repository.completeSessionWithWorkItem(invalidCompletedSession, {
+    ...item,
+    actualMinutes: 60,
+  });
+  expect(result.ok).toBe(false);
+  if (!result.ok) expect(result.code).toBe('corrupt_record');
+
+  expect(await getRaw(name, 'focusSessions', 'invalid-complete-session')).toBeUndefined();
+  expect(await getRaw(name, 'workItems', 'w1')).toEqual(item);
+});
+
 it('returns corrupt_record and leaves malformed distraction bytes untouched', async () => {
   const name = dbName();
   const repository = await createGuestFocusRepository({ databaseName: name });

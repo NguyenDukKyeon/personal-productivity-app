@@ -88,6 +88,19 @@ export function pauseFocusSession(session: FocusSession, nowIso: string): Result
   if (nowMs === null) {
     return err('invalid_transition', 'Focus clock is invalid.');
   }
+  const startedAtMs = parseTimestampMs(session.startedAt);
+  const updatedAtMs = parseTimestampMs(session.updatedAt);
+  const runningSinceMs = session.runningSince ? parseTimestampMs(session.runningSince) : null;
+  if (
+    startedAtMs === null ||
+    updatedAtMs === null ||
+    runningSinceMs === null ||
+    nowMs < runningSinceMs ||
+    nowMs < updatedAtMs ||
+    nowMs < startedAtMs
+  ) {
+    return err('invalid_transition', 'Focus clock moved backwards.');
+  }
   return ok({
     ...session,
     status: 'paused',
@@ -101,8 +114,19 @@ export function resumeFocusSession(session: FocusSession, nowIso: string): Resul
   if (session.status !== 'paused') {
     return err('invalid_transition', 'Only a paused session can be resumed.');
   }
-  if (parseTimestampMs(nowIso) === null) {
+  const nowMs = parseTimestampMs(nowIso);
+  if (nowMs === null) {
     return err('invalid_transition', 'Focus clock is invalid.');
+  }
+  const startedAtMs = parseTimestampMs(session.startedAt);
+  const updatedAtMs = parseTimestampMs(session.updatedAt);
+  if (
+    startedAtMs === null ||
+    updatedAtMs === null ||
+    nowMs < updatedAtMs ||
+    nowMs < startedAtMs
+  ) {
+    return err('invalid_transition', 'Focus clock moved backwards.');
   }
   return ok({
     ...session,
@@ -163,7 +187,7 @@ export function validateFocusSession(session: FocusSession): Result<void> {
 
   const createdAt = parseTimestampMs(session.createdAt);
   const updatedAt = parseTimestampMs(session.updatedAt);
-  if (createdAt === null || updatedAt === null || updatedAt < createdAt) {
+  if (createdAt === null || updatedAt === null || updatedAt < createdAt || updatedAt < startedAt) {
     return err('corrupt_record', 'Stored data is invalid and was left untouched.');
   }
 
@@ -179,10 +203,16 @@ export function validateFocusSession(session: FocusSession): Result<void> {
     if (session.endedAt !== null || session.focusedDurationMs !== null) {
       return err('corrupt_record', 'Stored data is invalid and was left untouched.');
     }
+    if (session.accumulatedFocusMs > updatedAt - startedAt) {
+      return err('corrupt_record', 'Stored data is invalid and was left untouched.');
+    }
   }
 
   if (session.status === 'paused') {
     if (session.runningSince !== null || session.endedAt !== null || session.focusedDurationMs !== null) {
+      return err('corrupt_record', 'Stored data is invalid and was left untouched.');
+    }
+    if (session.accumulatedFocusMs > updatedAt - startedAt) {
       return err('corrupt_record', 'Stored data is invalid and was left untouched.');
     }
   }
@@ -222,6 +252,22 @@ function finalize(
   const nowMs = parseTimestampMs(nowIso);
   if (nowMs === null) {
     return err('invalid_transition', 'Focus clock is invalid.');
+  }
+  const startedAtMs = parseTimestampMs(session.startedAt);
+  const updatedAtMs = parseTimestampMs(session.updatedAt);
+  if (
+    startedAtMs === null ||
+    updatedAtMs === null ||
+    nowMs < updatedAtMs ||
+    nowMs < startedAtMs
+  ) {
+    return err('invalid_transition', 'Focus clock moved backwards.');
+  }
+  if (session.status === 'running') {
+    const runningSinceMs = session.runningSince ? parseTimestampMs(session.runningSince) : null;
+    if (runningSinceMs === null || nowMs < runningSinceMs) {
+      return err('invalid_transition', 'Focus clock moved backwards.');
+    }
   }
   return ok({
     ...session,
