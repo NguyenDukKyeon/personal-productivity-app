@@ -111,6 +111,28 @@ it('returns corrupt_record and leaves malformed session bytes untouched', async 
   expect(await getRaw(name, 'focusSessions', 'bad-session')).toEqual(raw);
 });
 
+it('returns corrupt_record when stored session has semantically inverted timing (runningSince < startedAt) leaving raw row untouched', async () => {
+  const name = dbName();
+  const repository = await createGuestFocusRepository({ databaseName: name });
+  const semanticallyCorruptRow = {
+    ...runningSession,
+    id: 'corrupt-timing-session',
+    startedAt: '2026-08-31T08:00:00.000Z',
+    runningSince: '2026-08-31T07:50:00.000Z', // 10 minutes before startedAt
+  };
+  await putRaw(name, 'focusSessions', semanticallyCorruptRow);
+
+  const getResult = await repository.getSession('corrupt-timing-session');
+  expect(getResult.ok).toBe(false);
+  if (!getResult.ok) expect(getResult.code).toBe('corrupt_record');
+
+  const activeResult = await repository.getActiveSession();
+  expect(activeResult.ok).toBe(false);
+  if (!activeResult.ok) expect(activeResult.code).toBe('corrupt_record');
+
+  expect(await getRaw(name, 'focusSessions', 'corrupt-timing-session')).toEqual(semanticallyCorruptRow);
+});
+
 it('returns corrupt_record and leaves malformed distraction bytes untouched', async () => {
   const name = dbName();
   const repository = await createGuestFocusRepository({ databaseName: name });
@@ -121,6 +143,39 @@ it('returns corrupt_record and leaves malformed distraction bytes untouched', as
   expect(result.ok).toBe(false);
   if (!result.ok) expect(result.code).toBe('corrupt_record');
   expect(await getRaw(name, 'distractions', 'bad-d')).toEqual(raw);
+});
+
+it('returns corrupt_record when stored distraction has invalid capturedAt timestamp leaving raw row untouched', async () => {
+  const name = dbName();
+  const repository = await createGuestFocusRepository({ databaseName: name });
+  const raw = { id: 'bad-timestamp-d', focusSessionId: 's1', text: 'valid text', capturedAt: 'invalid-date' };
+  await putRaw(name, 'distractions', raw);
+
+  const result = await repository.listDistractions('s1');
+  expect(result.ok).toBe(false);
+  if (!result.ok) expect(result.code).toBe('corrupt_record');
+  expect(await getRaw(name, 'distractions', 'bad-timestamp-d')).toEqual(raw);
+});
+
+it('returns distractions in deterministic chronological order with id tie-breaker', async () => {
+  const name = dbName();
+  const repository = await createGuestFocusRepository({ databaseName: name });
+  const d3: Distraction = { id: 'd-3', focusSessionId: 's1', text: 'third', capturedAt: '2026-08-31T08:15:00.000Z' };
+  const d1b: Distraction = { id: 'd-1b', focusSessionId: 's1', text: 'first b', capturedAt: '2026-08-31T08:05:00.000Z' };
+  const d1a: Distraction = { id: 'd-1a', focusSessionId: 's1', text: 'first a', capturedAt: '2026-08-31T08:05:00.000Z' };
+  const d2: Distraction = { id: 'd-2', focusSessionId: 's1', text: 'second', capturedAt: '2026-08-31T08:10:00.000Z' };
+
+  // Save in non-chronological order
+  await repository.saveDistraction(d3);
+  await repository.saveDistraction(d1b);
+  await repository.saveDistraction(d2);
+  await repository.saveDistraction(d1a);
+
+  const result = await repository.listDistractions('s1');
+  expect(result.ok).toBe(true);
+  if (result.ok) {
+    expect(result.value.map((d) => d.id)).toEqual(['d-1a', 'd-1b', 'd-2', 'd-3']);
+  }
 });
 
 it('returns persistence_read_failed and persistence_write_failed on a closed connection', async () => {
@@ -230,4 +285,52 @@ it('rolls back session completion when the work item write fails', async () => {
   const verifyToday = await createGuestTodayRepository({ databaseName: name });
   expect(await verifyFocus.getSession(runningSession.id)).toEqual({ ok: true, value: runningSession });
   expect(await verifyToday.getWorkItem(workItem.id)).toEqual({ ok: true, value: workItem });
+});
+
+it('atomically starts session if none active and rejects concurrent starts across repository instances', async () => {
+  const name = dbName();
+  const repo1 = await createGuestFocusRepository({ databaseName: name });
+  const repo2 = await createGuestFocusRepository({ databaseName: name });
+
+  const sessionA: FocusSession = { ...runningSession, id: 's-a' };
+  const sessionB: FocusSession = { ...runningSession, id: 's-b' };
+
+  // Concurrent start requests
+  const [resA, resB] = await Promise.all([
+    repo1.startSessionIfNoneActive(sessionA),
+    repo2.startSessionIfNoneActive(sessionB),
+  ]);
+
+  const results = [resA, resB];
+  const okResults = results.filter((r) => r.ok);
+  const sessionActiveErrors = results.filter((r) => !r.ok && r.code === 'session_active');
+
+  expect(okResults.length).toBe(1);
+  expect(sessionActiveErrors.length).toBe(1);
+
+  // Exactly one active session in DB
+  const active = await repo1.getActiveSession();
+  expect(active.ok).toBe(true);
+  if (active.ok) {
+    expect(active.value).not.toBeNull();
+    expect(['s-a', 's-b']).toContain(active.value?.id);
+  }
+});
+
+it('rejects startSessionIfNoneActive when a paused session exists', async () => {
+  const name = dbName();
+  const repo = await createGuestFocusRepository({ databaseName: name });
+  const pausedSession: FocusSession = {
+    ...runningSession,
+    id: 's-paused',
+    status: 'paused',
+    runningSince: null,
+  };
+  await repo.saveSession(pausedSession);
+
+  const startRes = await repo.startSessionIfNoneActive(runningSession);
+  expect(startRes.ok).toBe(false);
+  if (!startRes.ok) {
+    expect(startRes.code).toBe('session_active');
+  }
 });

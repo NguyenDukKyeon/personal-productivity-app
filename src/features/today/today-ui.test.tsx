@@ -284,7 +284,22 @@ it('keeps previous view and shows error when persistence mutation fails', async 
   expect(screen.getByText('Available 300 min')).toBeTruthy();
 });
 
-it('links Start focus with the work item and first today time block', async () => {
+it('links Start focus without timeBlockId when no matching time block exists', async () => {
+  const algebra = workItem({ id: 'w1', title: 'Algebra' });
+  const service = createFakeService(
+    view({
+      workItems: [algebra],
+      timeBlocks: [],
+    }),
+  );
+
+  await renderToday(service);
+  expect(screen.getByRole('link', { name: 'Start focus Algebra' }).getAttribute('href')).toBe(
+    '/focus?workItemId=w1',
+  );
+});
+
+it('auto-associates timeBlockId when exactly 1 matching today time block exists', async () => {
   const algebra = workItem({ id: 'w1', title: 'Algebra' });
   const service = createFakeService(
     view({
@@ -307,5 +322,41 @@ it('links Start focus with the work item and first today time block', async () =
   await renderToday(service);
   expect(screen.getByRole('link', { name: 'Start focus Algebra' }).getAttribute('href')).toBe(
     '/focus?workItemId=w1&timeBlockId=tb1',
+  );
+});
+
+it('omits timeBlockId and sends only workItemId when 2 or more matching today time blocks exist', async () => {
+  const algebra = workItem({ id: 'w1', title: 'Algebra' });
+  const service = createFakeService(
+    view({
+      workItems: [algebra],
+      timeBlocks: [
+        {
+          id: 'tb1',
+          date: DATE,
+          workItemId: 'w1',
+          habitId: null,
+          startMinute: 600,
+          endMinute: 660,
+          createdAt: NOW,
+          updatedAt: NOW,
+        },
+        {
+          id: 'tb2',
+          date: DATE,
+          workItemId: 'w1',
+          habitId: null,
+          startMinute: 720,
+          endMinute: 780,
+          createdAt: NOW,
+          updatedAt: NOW,
+        },
+      ],
+    }),
+  );
+
+  await renderToday(service);
+  expect(screen.getByRole('link', { name: 'Start focus Algebra' }).getAttribute('href')).toBe(
+    '/focus?workItemId=w1',
   );
 });

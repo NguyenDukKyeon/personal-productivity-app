@@ -56,7 +56,8 @@ export function useFocusController(service: FocusService) {
     resumeSession: (id: string) => runMutation(() => service.resumeSession(id)),
     finishSession: (id: string, extras: { note?: string; qualityRating?: FocusQuality | null }) =>
       runMutation(() => service.finishSession(id, extras)),
-    abandonSession: (id: string) => runMutation(() => service.abandonSession(id)),
+    abandonSession: (id: string, extras?: { note?: string; qualityRating?: FocusQuality | null }) =>
+      runMutation(() => service.abandonSession(id, extras)),
     captureDistraction: (id: string, text: string) => runMutation(() => service.captureDistraction(id, text)),
   };
 }

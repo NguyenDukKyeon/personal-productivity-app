@@ -144,6 +144,21 @@ it('abandons from running or paused and still records focused duration', () => {
   const abandonedPaused = unwrap(abandonFocusSession(paused, T30));
   expect(abandonedPaused.status).toBe('abandoned');
   expect(abandonedPaused.focusedDurationMs).toBe(10 * 60_000);
+
+  const abandonedWithReflection = unwrap(
+    abandonFocusSession(start({ id: 's3' }), T10, { note: '  got distracted  ', qualityRating: 2 }),
+  );
+  expect(abandonedWithReflection.status).toBe('abandoned');
+  expect(abandonedWithReflection.note).toBe('got distracted');
+  expect(abandonedWithReflection.qualityRating).toBe(2);
+});
+
+it('rejects invalid quality rating when abandoning', () => {
+  const running = start();
+  // @ts-expect-error invalid rating test
+  const invalid = abandonFocusSession(running, T10, { qualityRating: 6 });
+  expect(invalid.ok).toBe(false);
+  if (!invalid.ok) expect(invalid.code).toBe('invalid_transition');
 });
 
 it('rejects impossible transitions', () => {
@@ -189,4 +204,48 @@ it('rejects corrupt session combinations during validation', () => {
 
   const negative: FocusSession = { ...running, accumulatedFocusMs: -1 };
   expect(validateFocusSession(negative).ok).toBe(false);
+
+  const runningSinceBeforeStartedAt: FocusSession = {
+    ...running,
+    startedAt: '2026-08-31T08:00:00.000Z',
+    runningSince: '2026-08-31T07:59:59.999Z',
+  };
+  const runningSinceRes = validateFocusSession(runningSinceBeforeStartedAt);
+  expect(runningSinceRes.ok).toBe(false);
+  if (!runningSinceRes.ok) expect(runningSinceRes.code).toBe('corrupt_record');
+
+  const invalidTimestamps: FocusSession = {
+    ...running,
+    createdAt: 'not-a-date',
+  };
+  expect(validateFocusSession(invalidTimestamps).ok).toBe(false);
+
+  const invertedCreatedUpdated: FocusSession = {
+    ...running,
+    createdAt: '2026-08-31T08:00:00.000Z',
+    updatedAt: '2026-08-31T07:00:00.000Z',
+  };
+  expect(validateFocusSession(invertedCreatedUpdated).ok).toBe(false);
+
+  const durationExceedsWallClock: FocusSession = {
+    ...running,
+    status: 'completed',
+    runningSince: null,
+    startedAt: '2026-08-31T08:00:00.000Z',
+    endedAt: '2026-08-31T08:10:00.000Z', // 10 minutes = 600,000 ms
+    accumulatedFocusMs: 0,
+    focusedDurationMs: 600_001, // 10 min 1 ms -> impossible
+  };
+  expect(validateFocusSession(durationExceedsWallClock).ok).toBe(false);
+
+  const accumulatedExceedsFinalized: FocusSession = {
+    ...running,
+    status: 'completed',
+    runningSince: null,
+    startedAt: '2026-08-31T08:00:00.000Z',
+    endedAt: '2026-08-31T08:10:00.000Z',
+    accumulatedFocusMs: 500_000,
+    focusedDurationMs: 400_000,
+  };
+  expect(validateFocusSession(accumulatedExceedsFinalized).ok).toBe(false);
 });

@@ -2,6 +2,7 @@ import type { IDBPDatabase } from 'idb';
 import { z } from 'zod';
 import { validateDistraction, type Distraction } from '@/domain/focus/distraction';
 import { validateFocusSession, type FocusSession } from '@/domain/focus/focus-session';
+import { parseTimestampMs } from '@/domain/focus/focus-timing';
 import { err, ok, type Result } from '@/domain/shared/result';
 import { validateWorkItem, type WorkItem } from '@/domain/work-items/work-item';
 import type { FocusRepository } from '@/infrastructure/persistence/contracts/focus-repository';
@@ -132,8 +133,12 @@ export class GuestFocusRepository implements FocusRepository {
 
   async getActiveSession(): Promise<Result<FocusSession | null>> {
     try {
-      const running = await this.db.getAllFromIndex('focusSessions', 'status', 'running');
-      const paused = await this.db.getAllFromIndex('focusSessions', 'status', 'paused');
+      const tx = this.db.transaction('focusSessions', 'readonly');
+      const store = tx.objectStore('focusSessions');
+      const statusIndex = store.index('status');
+      const running = await statusIndex.getAll('running');
+      const paused = await statusIndex.getAll('paused');
+      await tx.done;
       const active = [...running, ...paused];
       if (active.length > 1) {
         return err('corrupt_record', CORRUPT_RECORD_MESSAGE);
@@ -142,6 +147,38 @@ export class GuestFocusRepository implements FocusRepository {
       return parseRecord(focusSessionSchema, active[0], validateFocusSession);
     } catch {
       return readFailed();
+    }
+  }
+
+  async startSessionIfNoneActive(session: FocusSession): Promise<Result<FocusSession>> {
+    const valid = validateFocusSession(session);
+    if (!valid.ok) {
+      return valid;
+    }
+    const tx = this.db.transaction('focusSessions', 'readwrite');
+    try {
+      const store = tx.objectStore('focusSessions');
+      const statusIndex = store.index('status');
+      const running = await statusIndex.getAll('running');
+      const paused = await statusIndex.getAll('paused');
+      const active = [...running, ...paused];
+      if (active.length > 0) {
+        for (const row of active) {
+          const parsed = parseRecord(focusSessionSchema, row, validateFocusSession);
+          if (!parsed.ok) {
+            await abortQuietly(tx);
+            return parsed;
+          }
+        }
+        await abortQuietly(tx);
+        return err('session_active', 'Finish or abandon the current focus session first.');
+      }
+      await store.add(session);
+      await tx.done;
+      return ok(session);
+    } catch {
+      await abortQuietly(tx);
+      return writeFailed();
     }
   }
 
@@ -179,11 +216,16 @@ export class GuestFocusRepository implements FocusRepository {
 
   async listDistractions(focusSessionId: string): Promise<Result<Distraction[]>> {
     try {
-      return parseRecords(
-        distractionSchema,
-        await this.db.getAllFromIndex('distractions', 'focusSessionId', focusSessionId),
-        validateDistraction,
-      );
+      const rows = await this.db.getAllFromIndex('distractions', 'focusSessionId', focusSessionId);
+      const records = parseRecords(distractionSchema, rows, validateDistraction);
+      if (!records.ok) return records;
+      const sorted = [...records.value].sort((a, b) => {
+        const aMs = parseTimestampMs(a.capturedAt) ?? 0;
+        const bMs = parseTimestampMs(b.capturedAt) ?? 0;
+        if (aMs !== bMs) return aMs - bMs;
+        return a.id.localeCompare(b.id);
+      });
+      return ok(sorted);
     } catch {
       return readFailed();
     }

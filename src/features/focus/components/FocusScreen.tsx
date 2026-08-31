@@ -63,7 +63,7 @@ export function FocusScreen({
               onPause={() => controller.pauseSession(active.id)}
               onResume={() => controller.resumeSession(active.id)}
               onFinish={(extras) => controller.finishSession(active.id, extras)}
-              onAbandon={() => controller.abandonSession(active.id)}
+              onAbandon={(extras) => controller.abandonSession(active.id, extras)}
             />
             <DistractionInbox
               distractions={view.distractions}

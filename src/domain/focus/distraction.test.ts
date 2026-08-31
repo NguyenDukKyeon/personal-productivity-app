@@ -61,4 +61,15 @@ it('leaves invalid stored distractions as validation failures', () => {
       capturedAt,
     }).ok,
   ).toBe(false);
+
+  const invalidTimestamp = validateDistraction({
+    id: 'd1',
+    focusSessionId: 's1',
+    text: 'valid text',
+    capturedAt: 'not-a-valid-date',
+  });
+  expect(invalidTimestamp.ok).toBe(false);
+  if (!invalidTimestamp.ok) {
+    expect(invalidTimestamp.code).toBe('corrupt_record');
+  }
 });

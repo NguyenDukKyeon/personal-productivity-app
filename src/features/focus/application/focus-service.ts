@@ -55,7 +55,10 @@ export interface FocusService {
     id: string,
     extras: { note?: string; qualityRating?: FocusQuality | null },
   ): Promise<Result<FocusSession>>;
-  abandonSession(id: string): Promise<Result<FocusSession>>;
+  abandonSession(
+    id: string,
+    extras?: { note?: string; qualityRating?: FocusQuality | null },
+  ): Promise<Result<FocusSession>>;
   captureDistraction(id: string, text: string): Promise<Result<Distraction>>;
   listCompletedSessions(): Promise<Result<FocusSession[]>>;
 }
@@ -143,41 +146,42 @@ export function createFocusService(deps: {
     },
 
     async startSession(input) {
-      const active = await focusRepository.getActiveSession();
-      if (!active.ok) return active;
-      if (active.value) {
-        return err('session_active', 'Finish or abandon the current focus session first.');
-      }
+      const startedAt = now();
+      const startedAtIso = startedAt.toISOString();
 
+      let effectiveWorkItemId = input.workItemId;
       let startLatencyMinutes: number | null = null;
-
-      if (input.workItemId) {
-        const item = await todayRepository.getWorkItem(input.workItemId);
-        if (!item.ok) return item;
-        if (!item.value) return err('unknown_entity', 'Work item was not found.');
-      }
 
       if (input.timeBlockId) {
         const block = await todayRepository.getTimeBlock(input.timeBlockId);
         if (!block.ok) return block;
         if (!block.value) return err('unknown_entity', 'Time block was not found.');
-        if (input.workItemId && block.value.workItemId !== input.workItemId) {
+        if (input.workItemId && block.value.workItemId && block.value.workItemId !== input.workItemId) {
           return err('unknown_entity', 'Time block does not belong to that work item.');
         }
-        startLatencyMinutes = computeStartLatencyMinutes(block.value.startMinute, now());
+        if (!effectiveWorkItemId && block.value.workItemId) {
+          effectiveWorkItemId = block.value.workItemId;
+        }
+        startLatencyMinutes = computeStartLatencyMinutes(block.value.startMinute, startedAt);
+      }
+
+      if (effectiveWorkItemId) {
+        const item = await todayRepository.getWorkItem(effectiveWorkItemId);
+        if (!item.ok) return item;
+        if (!item.value) return err('unknown_entity', 'Work item was not found.');
       }
 
       const created = createRunningFocusSession({
         id: newId(),
-        nowIso: nowIso(),
-        workItemId: input.workItemId,
+        nowIso: startedAtIso,
+        workItemId: effectiveWorkItemId,
         timeBlockId: input.timeBlockId,
         mode: input.mode,
         plannedDurationMinutes: input.plannedDurationMinutes,
         startLatencyMinutes,
       });
       if (!created.ok) return created;
-      return persistSession(created.value);
+      return focusRepository.startSessionIfNoneActive(created.value);
     },
 
     async pauseSession(id) {
@@ -229,10 +233,10 @@ export function createFocusService(deps: {
       return ok(completed.value);
     },
 
-    async abandonSession(id) {
+    async abandonSession(id, extras) {
       const session = await requireSession(id);
       if (!session.ok) return session;
-      const abandoned = abandonFocusSession(session.value, nowIso());
+      const abandoned = abandonFocusSession(session.value, nowIso(), extras);
       if (!abandoned.ok) return abandoned;
       return persistSession(abandoned.value);
     },

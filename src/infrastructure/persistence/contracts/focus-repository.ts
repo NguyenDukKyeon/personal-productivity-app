@@ -8,6 +8,7 @@ export interface FocusRepository {
   listSessions(): Promise<Result<FocusSession[]>>;
   listSessionsForWorkItem(workItemId: string): Promise<Result<FocusSession[]>>;
   getActiveSession(): Promise<Result<FocusSession | null>>;
+  startSessionIfNoneActive(session: FocusSession): Promise<Result<FocusSession>>;
   saveSession(session: FocusSession): Promise<Result<void>>;
   completeSessionWithWorkItem(session: FocusSession, workItem: WorkItem): Promise<Result<void>>;
   listDistractions(focusSessionId: string): Promise<Result<Distraction[]>>;

@@ -17,7 +17,7 @@ export function FocusControls({
   onPause: () => Promise<Result<unknown>>;
   onResume: () => Promise<Result<unknown>>;
   onFinish: (extras: { note?: string; qualityRating?: FocusQuality | null }) => Promise<Result<unknown>>;
-  onAbandon: () => Promise<Result<unknown>>;
+  onAbandon: (extras: { note?: string; qualityRating?: FocusQuality | null }) => Promise<Result<unknown>>;
 }) {
   const [note, setNote] = useState(session.note);
   const [quality, setQuality] = useState(session.qualityRating ? String(session.qualityRating) : '');
@@ -58,7 +58,18 @@ export function FocusControls({
         >
           Finish
         </Button>
-        <Button variant="danger" disabled={isBusy} onClick={() => run(onAbandon)}>
+        <Button
+          variant="danger"
+          disabled={isBusy}
+          onClick={() =>
+            run(() =>
+              onAbandon({
+                note,
+                qualityRating: quality ? (Number(quality) as FocusQuality) : null,
+              }),
+            )
+          }
+        >
           Abandon session
         </Button>
       </div>

@@ -297,3 +297,79 @@ it('preselects work item and time block from the start link without auto-startin
   expect((screen.getByLabelText('Time block') as HTMLSelectElement).value).toBe('tb1');
   expect(service.startSession).not.toHaveBeenCalled();
 });
+
+it('preserves typed reflection on abandon, displays in summary, and persists across reload', async () => {
+  const user = userEvent.setup();
+  const running = session();
+  const item = workItem({ id: 'w1', title: 'Algebra' });
+  const abandonedSession = session({
+    status: 'abandoned',
+    runningSince: null,
+    endedAt: NOW_ISO,
+    focusedDurationMs: 12 * 60_000,
+    note: 'got interrupted by team meeting',
+    qualityRating: 2,
+  });
+
+  const service = createFakeService(
+    view({ activeSession: running, elapsedMs: 12 * 60_000, remainingMs: 38 * 60_000, workItem: item }),
+    {
+      abandonSession: vi.fn(async (id, extras) => {
+        expect(id).toBe('s1');
+        expect(extras).toEqual({
+          note: 'got interrupted by team meeting',
+          qualityRating: 2,
+        });
+        return ok(abandonedSession);
+      }),
+      getFocusView: vi
+        .fn()
+        .mockResolvedValueOnce(
+          ok(view({ activeSession: running, elapsedMs: 12 * 60_000, remainingMs: 38 * 60_000, workItem: item })),
+        )
+        .mockResolvedValueOnce(
+          ok(
+            view({
+              activeSession: null,
+              lastFinalizedSession: abandonedSession,
+              workItem: item,
+            }),
+          ),
+        ),
+    },
+  );
+
+  await renderFocus(service);
+  await user.type(screen.getByLabelText('Session note'), 'got interrupted by team meeting');
+  await user.selectOptions(screen.getByLabelText('Quality rating'), '2');
+  await user.click(screen.getByRole('button', { name: 'Abandon session' }));
+
+  expect(service.abandonSession).toHaveBeenCalledWith('s1', {
+    note: 'got interrupted by team meeting',
+    qualityRating: 2,
+  });
+  expect(await screen.findByText('Abandoned · Focused 12:00')).toBeTruthy();
+  expect(screen.getByText('got interrupted by team meeting')).toBeTruthy();
+  expect(screen.getByText('Quality 2/5')).toBeTruthy();
+});
+
+it('preserves note and quality inputs when abandon write fails', async () => {
+  const user = userEvent.setup();
+  const running = session();
+  const item = workItem({ id: 'w1', title: 'Algebra' });
+  const service = createFakeService(
+    view({ activeSession: running, elapsedMs: 12 * 60_000, remainingMs: 38 * 60_000, workItem: item }),
+    {
+      abandonSession: vi.fn(async () => err('persistence_write_failed', 'Failed to abandon session.')),
+    },
+  );
+
+  await renderFocus(service);
+  await user.type(screen.getByLabelText('Session note'), 'unexpected stop');
+  await user.selectOptions(screen.getByLabelText('Quality rating'), '3');
+  await user.click(screen.getByRole('button', { name: 'Abandon session' }));
+
+  expect(await screen.findByText('Failed to abandon session.')).toBeTruthy();
+  expect((screen.getByLabelText('Session note') as HTMLTextAreaElement).value).toBe('unexpected stop');
+  expect((screen.getByLabelText('Quality rating') as HTMLSelectElement).value).toBe('3');
+});

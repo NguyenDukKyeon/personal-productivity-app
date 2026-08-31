@@ -128,6 +128,15 @@ it('rejects unknown work items and unknown time blocks without writing a session
   expect(unknownBlock.ok).toBe(false);
   if (!unknownBlock.ok) expect(unknownBlock.code).toBe('unknown_entity');
 
+  const mismatchedBlock = await harness.service.startSession({
+    workItemId: 'other-item',
+    timeBlockId: (await seedScheduledWork(harness)).block.id,
+    mode: 'countdown',
+    plannedDurationMinutes: 25,
+  });
+  expect(mismatchedBlock.ok).toBe(false);
+  if (!mismatchedBlock.ok) expect(mismatchedBlock.code).toBe('unknown_entity');
+
   expect(unwrap(await harness.service.getFocusView()).activeSession).toBeNull();
 });
 
@@ -259,8 +268,21 @@ it('updates actualMinutes from completed sessions only and ignores abandoned tim
     }),
   );
   harness.setNow('2026-08-31T08:50:00.000Z');
-  unwrap(await harness.service.abandonSession(second.id));
+  const abandoned = unwrap(
+    await harness.service.abandonSession(second.id, {
+      note: 'interrupted by urgent call',
+      qualityRating: 2,
+    }),
+  );
+  expect(abandoned.status).toBe('abandoned');
+  expect(abandoned.note).toBe('interrupted by urgent call');
+  expect(abandoned.qualityRating).toBe(2);
   expect(unwrap(await harness.todayRepository.getWorkItem(item.id))?.actualMinutes).toBe(12);
+
+  const view = unwrap(await harness.service.getFocusView());
+  expect(view.lastFinalizedSession?.status).toBe('abandoned');
+  expect(view.lastFinalizedSession?.note).toBe('interrupted by urgent call');
+  expect(view.lastFinalizedSession?.qualityRating).toBe(2);
 
   const completed = unwrap(await harness.service.listCompletedSessions());
   expect(completed).toHaveLength(1);
@@ -308,4 +330,54 @@ it('rejects blank distraction text', async () => {
   const result = await harness.service.captureDistraction(started.id, '   ');
   expect(result.ok).toBe(false);
   if (!result.ok) expect(result.code).toBe('invalid_distraction');
+});
+
+it('handles concurrent start requests across service instances sharing database', async () => {
+  const name = `focus-concurrency-${crypto.randomUUID()}`;
+  const today1 = await createGuestTodayRepository({ databaseName: name });
+  const focus1 = await createGuestFocusRepository({ databaseName: name });
+  const service1 = createFocusService({
+    focusRepository: focus1,
+    todayRepository: today1,
+    now: () => NOW,
+    newId: () => 'session-1',
+  });
+
+  const today2 = await createGuestTodayRepository({ databaseName: name });
+  const focus2 = await createGuestFocusRepository({ databaseName: name });
+  const service2 = createFocusService({
+    focusRepository: focus2,
+    todayRepository: today2,
+    now: () => NOW,
+    newId: () => 'session-2',
+  });
+
+  const item = workItem();
+  unwrap(await today1.saveWorkItem(item));
+
+  const [res1, res2] = await Promise.all([
+    service1.startSession({
+      workItemId: item.id,
+      timeBlockId: null,
+      mode: 'countdown',
+      plannedDurationMinutes: 25,
+    }),
+    service2.startSession({
+      workItemId: item.id,
+      timeBlockId: null,
+      mode: 'countdown',
+      plannedDurationMinutes: 25,
+    }),
+  ]);
+
+  const results = [res1, res2];
+  const okResults = results.filter((r) => r.ok);
+  const sessionActiveErrors = results.filter((r) => !r.ok && r.code === 'session_active');
+
+  expect(okResults.length).toBe(1);
+  expect(sessionActiveErrors.length).toBe(1);
+
+  const view = unwrap(await service1.getFocusView());
+  expect(view.activeSession).not.toBeNull();
+  expect(['session-1', 'session-2']).toContain(view.activeSession?.id);
 });

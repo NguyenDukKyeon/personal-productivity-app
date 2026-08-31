@@ -126,10 +126,17 @@ export function completeFocusSession(
   });
 }
 
-export function abandonFocusSession(session: FocusSession, nowIso: string): Result<FocusSession> {
+export function abandonFocusSession(
+  session: FocusSession,
+  nowIso: string,
+  extras: { note?: string; qualityRating?: FocusQuality | null } = {},
+): Result<FocusSession> {
+  if (extras.qualityRating != null && !QUALITY_VALUES.includes(extras.qualityRating)) {
+    return err('invalid_transition', 'Quality rating must be between 1 and 5.');
+  }
   return finalize(session, nowIso, 'abandoned', {
-    note: session.note,
-    qualityRating: session.qualityRating,
+    note: extras.note?.trim() ?? session.note,
+    qualityRating: extras.qualityRating ?? session.qualityRating,
   });
 }
 
@@ -154,8 +161,19 @@ export function validateFocusSession(session: FocusSession): Result<void> {
     return err('corrupt_record', 'Stored data is invalid and was left untouched.');
   }
 
+  const createdAt = parseTimestampMs(session.createdAt);
+  const updatedAt = parseTimestampMs(session.updatedAt);
+  if (createdAt === null || updatedAt === null || updatedAt < createdAt) {
+    return err('corrupt_record', 'Stored data is invalid and was left untouched.');
+  }
+
+  if (session.startLatencyMinutes !== null && !Number.isInteger(session.startLatencyMinutes)) {
+    return err('corrupt_record', 'Stored data is invalid and was left untouched.');
+  }
+
   if (session.status === 'running') {
-    if (!session.runningSince || parseTimestampMs(session.runningSince) === null) {
+    const runningSince = session.runningSince ? parseTimestampMs(session.runningSince) : null;
+    if (runningSince === null || runningSince < startedAt) {
       return err('corrupt_record', 'Stored data is invalid and was left untouched.');
     }
     if (session.endedAt !== null || session.focusedDurationMs !== null) {
@@ -177,7 +195,9 @@ export function validateFocusSession(session: FocusSession): Result<void> {
       endedAt < startedAt ||
       session.focusedDurationMs == null ||
       !Number.isInteger(session.focusedDurationMs) ||
-      session.focusedDurationMs < 0
+      session.focusedDurationMs < 0 ||
+      session.focusedDurationMs > endedAt - startedAt ||
+      session.accumulatedFocusMs > session.focusedDurationMs
     ) {
       return err('corrupt_record', 'Stored data is invalid and was left untouched.');
     }
