@@ -2,7 +2,7 @@
 import type { Habit } from '@/domain/habits/habit';
 import type { HabitCheckIn } from '@/domain/habits/habit-check-in';
 import type { Routine } from '@/domain/habits/routine';
-import { ok, type Result } from '@/domain/shared/result';
+import { err, ok, type Result } from '@/domain/shared/result';
 import type { HabitRepository } from '@/infrastructure/persistence/contracts/habit-repository';
 import { createHabitService, type HabitService } from './habit-service';
 
@@ -48,7 +48,16 @@ class InMemoryHabitRepository implements HabitRepository {
   }
 
   async saveCheckIn(checkIn: HabitCheckIn): Promise<Result<void>> {
-    this.checkIns.set(`${checkIn.habitId}#${checkIn.date}`, checkIn);
+    const key = `${checkIn.habitId}#${checkIn.date}`;
+    const existing = this.checkIns.get(key);
+    if (existing) {
+      this.checkIns.set(key, {
+        ...checkIn,
+        createdAt: existing.createdAt,
+      });
+    } else {
+      this.checkIns.set(key, checkIn);
+    }
     return ok(undefined);
   }
 
@@ -72,6 +81,51 @@ class InMemoryHabitRepository implements HabitRepository {
 
   async deleteRoutine(id: string): Promise<Result<void>> {
     this.routines.delete(id);
+    return ok(undefined);
+  }
+
+  async assignHabitToRoutine(habitId: string, routineId: string): Promise<Result<void>> {
+    if (!this.habits.has(habitId)) return err('habit_not_found', 'Habit not found');
+    const target = this.routines.get(routineId);
+    if (!target) return err('routine_not_found', 'Routine not found');
+
+    for (const [rId, r] of this.routines.entries()) {
+      if (rId !== routineId && r.habitIds.includes(habitId)) {
+        this.routines.set(rId, {
+          ...r,
+          habitIds: r.habitIds.filter((h) => h !== habitId),
+        });
+      }
+    }
+
+    if (!target.habitIds.includes(habitId)) {
+      this.routines.set(routineId, {
+        ...target,
+        habitIds: [...target.habitIds, habitId],
+      });
+    }
+    return ok(undefined);
+  }
+
+  async removeHabitFromRoutine(habitId: string): Promise<Result<void>> {
+    for (const [rId, r] of this.routines.entries()) {
+      if (r.habitIds.includes(habitId)) {
+        this.routines.set(rId, {
+          ...r,
+          habitIds: r.habitIds.filter((h) => h !== habitId),
+        });
+      }
+    }
+    return ok(undefined);
+  }
+
+  async reorderRoutineHabits(routineId: string, habitIds: string[]): Promise<Result<void>> {
+    const target = this.routines.get(routineId);
+    if (!target) return err('routine_not_found', 'Routine not found');
+    this.routines.set(routineId, {
+      ...target,
+      habitIds,
+    });
     return ok(undefined);
   }
 }
@@ -108,6 +162,8 @@ describe('HabitService application service', () => {
     if (!viewRes.ok) return;
 
     expect(viewRes.value.items.length).toBe(1);
+    expect(viewRes.value.scheduledTodayItems.length).toBe(1);
+    expect(viewRes.value.unscheduledTodayItems.length).toBe(0);
     expect(viewRes.value.items[0].habit.title).toBe('Read English');
     expect(viewRes.value.items[0].isScheduledToday).toBe(true);
     expect(viewRes.value.items[0].checkIn).toBe(null);
@@ -154,7 +210,9 @@ describe('HabitService application service', () => {
     expect(viewRes.value.metricsSummary.pendingToday).toBe(0);
   });
 
-  it('detects recovery state when a scheduled habit was missed on the previous scheduled day', async () => {
+  it('detects recovery state when a scheduled habit was missed after its creation', async () => {
+    // Habit created earlier on Aug 28
+    fixedNow = new Date('2026-08-28T07:00:00.000Z');
     const h1 = await service.createHabit({
       title: 'Workout',
       minimumVersion: '5 pushups',
@@ -162,8 +220,8 @@ describe('HabitService application service', () => {
     });
     if (!h1.ok) throw new Error('Create failed');
 
-    // Day 2026-08-30 had NO check-in recorded.
-    // When viewing 2026-08-31:
+    // Fast-forward to Aug 31 where Aug 30 was missed
+    fixedNow = new Date('2026-08-31T07:00:00.000Z');
     const viewRes = await service.getHabitsView('2026-08-31');
     expect(viewRes.ok).toBe(true);
     if (!viewRes.ok) return;
@@ -175,7 +233,81 @@ describe('HabitService application service', () => {
     expect(viewRes.value.metricsSummary.inRecoveryToday).toBe(1);
   });
 
-  it('groups habits by routines and preserves unassigned habits', async () => {
+  it('3. FIX TODAY / CHECK-IN ELIGIBILITY: rejects future, inactive, and unscheduled dates', async () => {
+    // Habit scheduled on MWF created on Aug 28
+    fixedNow = new Date('2026-08-28T07:00:00.000Z'); // Friday
+    const hRes = await service.createHabit({
+      title: 'Gym',
+      minimumVersion: '5 pushups',
+      schedule: { kind: 'weekdays', weekdays: [1, 3, 5] },
+    });
+    if (!hRes.ok) throw new Error('Create failed');
+    const habit = hRes.value;
+
+    fixedNow = new Date('2026-08-31T07:00:00.000Z'); // Monday
+
+    // Check-in on future date (2026-09-01) rejected
+    const futureCheck = await service.recordCheckIn({
+      habitId: habit.id,
+      date: '2026-09-01',
+      kind: 'full',
+    });
+    expect(futureCheck.ok).toBe(false);
+    if (!futureCheck.ok) {
+      expect(futureCheck.code).toBe('future_check_in_not_allowed');
+    }
+
+    // Check-in on unscheduled past Tuesday (2026-08-25 was before creation, or 2026-09-01)
+    // 2026-08-30 is Sunday (unscheduled under MWF)
+    const unscheduledCheck = await service.recordCheckIn({
+      habitId: habit.id,
+      date: '2026-08-30',
+      kind: 'full',
+    });
+    expect(unscheduledCheck.ok).toBe(false);
+    if (!unscheduledCheck.ok) {
+      expect(unscheduledCheck.code).toBe('habit_not_scheduled');
+    }
+
+    // Archived habit rejected
+    await service.archiveHabit(habit.id);
+    const archivedCheck = await service.recordCheckIn({
+      habitId: habit.id,
+      date: '2026-08-31',
+      kind: 'full',
+    });
+    expect(archivedCheck.ok).toBe(false);
+    if (!archivedCheck.ok) {
+      expect(archivedCheck.code).toBe('habit_inactive');
+    }
+  });
+
+  it('distinguishes scheduled today habits from unscheduled habits in getHabitsView', async () => {
+    // Habit 1: Daily
+    const h1 = await service.createHabit({
+      title: 'Daily Habit',
+      minimumVersion: '1 min',
+      schedule: { kind: 'daily' },
+    });
+    // Habit 2: Tue/Thu
+    const h2 = await service.createHabit({
+      title: 'Tue Thu Habit',
+      minimumVersion: '1 min',
+      schedule: { kind: 'weekdays', weekdays: [2, 4] },
+    });
+    if (!h1.ok || !h2.ok) throw new Error('Create failed');
+
+    // On Monday 2026-08-31
+    const viewRes = await service.getHabitsView('2026-08-31');
+    expect(viewRes.ok).toBe(true);
+    if (!viewRes.ok) return;
+
+    expect(viewRes.value.scheduledTodayItems.map((i) => i.habit.id)).toEqual([h1.value.id]);
+    expect(viewRes.value.unscheduledTodayItems.map((i) => i.habit.id)).toEqual([h2.value.id]);
+    expect(viewRes.value.metricsSummary.totalScheduledToday).toBe(1);
+  });
+
+  it('groups habits by routines, derives routine info, and preserves unassigned habits', async () => {
     const routineRes = await service.createRoutine({
       name: 'Morning Routine',
       contextLabel: '07:30',
@@ -203,12 +335,15 @@ describe('HabitService application service', () => {
     expect(viewRes.value.routineGroups[0].routine.name).toBe('Morning Routine');
     expect(viewRes.value.routineGroups[0].items.length).toBe(1);
     expect(viewRes.value.routineGroups[0].items[0].habit.id).toBe(h1.value.id);
+    expect(viewRes.value.routineGroups[0].items[0].routineId).toBe(routineRes.value.id);
 
     expect(viewRes.value.unassignedItems.length).toBe(1);
     expect(viewRes.value.unassignedItems[0].habit.id).toBe(h2.value.id);
+    expect(viewRes.value.unassignedItems[0].routineId).toBe(null);
   });
 
   it('soft archives a habit so it disappears from active view but retains history', async () => {
+    fixedNow = new Date('2026-08-29T07:00:00.000Z');
     const h = await service.createHabit({
       title: 'Meditation',
       minimumVersion: '1 breath',
@@ -218,10 +353,11 @@ describe('HabitService application service', () => {
 
     await service.recordCheckIn({
       habitId: h.value.id,
-      date: '2026-08-30',
+      date: '2026-08-29',
       kind: 'full',
     });
 
+    fixedNow = new Date('2026-08-31T07:00:00.000Z');
     const archiveRes = await service.archiveHabit(h.value.id);
     expect(archiveRes.ok).toBe(true);
 

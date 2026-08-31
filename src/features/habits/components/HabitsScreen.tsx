@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useState } from 'react';
 import {
@@ -310,6 +310,7 @@ export function HabitsScreen({ service, initialDate }: HabitsScreenProps) {
 
       {/* Habit Create/Edit Modal */}
       <HabitFormModal
+        key={isHabitModalOpen ? editingHabit?.id ?? 'create' : 'closed'}
         isOpen={isHabitModalOpen}
         onClose={() => {
           setIsHabitModalOpen(false);

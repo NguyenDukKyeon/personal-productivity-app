@@ -1,7 +1,6 @@
-﻿import type { Habit } from './habit';
+﻿import { isHabitScheduledOnDate, type Habit } from './habit';
 import type { HabitCheckIn } from './habit-check-in';
 import { deriveHabitRecoveryState } from './habit-recovery';
-import { isHabitScheduledForDate } from './habit-schedule';
 
 export interface HabitMetrics {
   scheduledDays: number;
@@ -36,7 +35,7 @@ export function calculateHabitMetrics({
   let recoveriesCompleted = 0;
 
   for (const dateKey of dateKeys) {
-    if (!isHabitScheduledForDate(habit.schedule, dateKey)) {
+    if (!isHabitScheduledOnDate(habit, dateKey)) {
       continue;
     }
 
@@ -44,7 +43,7 @@ export function calculateHabitMetrics({
     const checkIn = checkInMap.get(dateKey);
 
     if (!checkIn) {
-      // Missed opportunity (no check-in)
+      // Missed opportunity
       continue;
     }
 

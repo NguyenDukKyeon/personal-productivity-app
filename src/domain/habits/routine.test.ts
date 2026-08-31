@@ -5,6 +5,8 @@ import {
   removeHabitFromRoutine,
   reorderRoutineHabits,
   updateRoutine,
+  validateRoutinePreWrite,
+  type Routine,
 } from './routine';
 
 describe('routine domain entity', () => {
@@ -30,7 +32,7 @@ describe('routine domain entity', () => {
     });
   });
 
-  it('rejects empty name or invalid id', () => {
+  it('rejects empty name or invalid pre-write properties', () => {
     expect(
       createRoutine({
         id: ' ',
@@ -44,6 +46,16 @@ describe('routine domain entity', () => {
         name: '   ',
       }).ok,
     ).toBe(false);
+
+    const badRoutine: Routine = {
+      id: 'r2',
+      name: 'Valid Name',
+      contextLabel: '',
+      habitIds: ['h1', 'h1'], // duplicate
+      createdAt: '2026-08-31T07:00:00.000Z',
+      updatedAt: '2026-08-31T07:00:00.000Z',
+    };
+    expect(validateRoutinePreWrite(badRoutine).ok).toBe(false);
   });
 
   it('adds, removes, and reorders habit IDs within a routine', () => {

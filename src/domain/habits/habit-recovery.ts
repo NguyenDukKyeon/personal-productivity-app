@@ -1,7 +1,6 @@
 ﻿import { parseLocalDateKey, toLocalDateKey } from '../shared/local-date';
-import type { Habit } from './habit';
+import { isHabitScheduledOnDate, type Habit } from './habit';
 import type { HabitCheckIn } from './habit-check-in';
-import { isHabitScheduledForDate } from './habit-schedule';
 
 export interface HabitRecoveryState {
   isRecovery: boolean;
@@ -38,7 +37,7 @@ export function deriveHabitRecoveryState({
     const candidateDate = shiftLocalDateKey(currentDateKey, offset);
     if (!candidateDate) continue;
 
-    if (isHabitScheduledForDate(habit.schedule, candidateDate)) {
+    if (isHabitScheduledOnDate(habit, candidateDate)) {
       const lastCheckIn = checkInMap.get(candidateDate) ?? null;
       const isRecovery = !lastCheckIn || lastCheckIn.kind === 'skipped';
       return {

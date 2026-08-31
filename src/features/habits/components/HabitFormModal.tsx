@@ -35,6 +35,11 @@ export function HabitFormModal({
   editingHabit,
   routines,
 }: HabitFormModalProps) {
+  // Derive initial routine assignment from routines
+  const initialRoutineId = editingHabit
+    ? routines.find((r) => r.habitIds.includes(editingHabit.id))?.id ?? ''
+    : '';
+
   const [title, setTitle] = useState(editingHabit?.title ?? '');
   const [cue, setCue] = useState(editingHabit?.cue ?? '');
   const [minimumVersion, setMinimumVersion] = useState(editingHabit?.minimumVersion ?? '');
@@ -45,7 +50,7 @@ export function HabitFormModal({
   const [selectedWeekdays, setSelectedWeekdays] = useState<WeekdayNumber[]>(
     editingHabit?.schedule.kind === 'weekdays' ? editingHabit.schedule.weekdays : [1, 2, 3, 4, 5],
   );
-  const [routineId, setRoutineId] = useState<string>(editingHabit?.routineId ?? '');
+  const [routineId, setRoutineId] = useState<string>(initialRoutineId);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 

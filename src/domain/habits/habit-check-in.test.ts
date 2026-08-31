@@ -3,6 +3,8 @@ import {
   createHabitCheckIn,
   generateCheckInId,
   updateHabitCheckIn,
+  validateCheckInPreWrite,
+  type HabitCheckIn,
 } from './habit-check-in';
 
 describe('habit-check-in domain entity', () => {
@@ -54,7 +56,7 @@ describe('habit-check-in domain entity', () => {
     }
   });
 
-  it('rejects invalid dates or empty habit IDs', () => {
+  it('rejects invalid dates, empty habit IDs, and invalid pre-write records', () => {
     expect(
       createHabitCheckIn({
         habitId: ' ',
@@ -78,9 +80,20 @@ describe('habit-check-in domain entity', () => {
         kind: 'full',
       }).ok,
     ).toBe(false);
+
+    const badCheckIn: HabitCheckIn = {
+      id: 'wrong_id',
+      habitId: 'habit_1',
+      date: '2026-08-31',
+      kind: 'full',
+      note: '',
+      createdAt: '2026-08-31T08:00:00.000Z',
+      updatedAt: '2026-08-31T08:00:00.000Z',
+    };
+    expect(validateCheckInPreWrite(badCheckIn).ok).toBe(false);
   });
 
-  it('updates an existing check-in kind and note', () => {
+  it('updates an existing check-in kind and note while preserving createdAt audit timestamp', () => {
     const initial = createHabitCheckIn({
       habitId: 'h1',
       date: '2026-08-31',

@@ -11,8 +11,8 @@ import { HabitTodayCard } from './HabitTodayCard';
 interface RoutineSectionProps {
   routine: Routine;
   items: HabitTodayItem[];
-  onCheckIn: (habitId: string, kind: HabitCheckInKind, note?: string) => void;
-  onClearCheckIn: (habitId: string) => void;
+  onCheckIn: (habitId: string, kind: HabitCheckInKind, note?: string) => Promise<unknown> | void;
+  onClearCheckIn: (habitId: string) => Promise<unknown> | void;
   onEditHabit: (habit: Habit) => void;
   onArchiveHabit: (habitId: string) => void;
   onViewHistory: (habit: Habit) => void;
@@ -31,8 +31,11 @@ export function RoutineSection({
 }: RoutineSectionProps) {
   const [collapsed, setCollapsed] = useState(false);
 
-  const completedCount = items.filter((i) => i.checkIn && (i.checkIn.kind === 'full' || i.checkIn.kind === 'minimum')).length;
-  const totalCount = items.length;
+  const scheduledItems = items.filter((i) => i.isScheduledToday);
+  const completedCount = scheduledItems.filter(
+    (i) => i.checkIn && (i.checkIn.kind === 'full' || i.checkIn.kind === 'minimum'),
+  ).length;
+  const totalScheduledCount = scheduledItems.length;
 
   return (
     <section className="flex flex-col gap-3 rounded-2xl border border-slate-200/90 bg-slate-50/50 p-4 dark:border-[#1e2538] dark:bg-[#11141d]/50">
@@ -56,7 +59,7 @@ export function RoutineSection({
             </span>
           )}
           <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
-            ({completedCount}/{totalCount} completed)
+            ({completedCount}/{totalScheduledCount} completed today)
           </span>
         </div>
 

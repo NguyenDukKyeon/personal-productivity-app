@@ -11,8 +11,8 @@ import type { HabitTodayItem } from '../application/habit-service';
 
 interface HabitTodayCardProps {
   item: HabitTodayItem;
-  onCheckIn: (habitId: string, kind: HabitCheckInKind, note?: string) => void;
-  onClearCheckIn: (habitId: string) => void;
+  onCheckIn: (habitId: string, kind: HabitCheckInKind, note?: string) => Promise<unknown> | void;
+  onClearCheckIn: (habitId: string) => Promise<unknown> | void;
   onEdit: (habit: Habit) => void;
   onArchive: (habitId: string) => void;
   onViewHistory: (habit: Habit) => void;
@@ -36,20 +36,52 @@ export function HabitTodayCard({
   onArchive,
   onViewHistory,
 }: HabitTodayCardProps) {
-  const { habit, checkIn, isRecovery, lastScheduledDate } = item;
+  const { habit, checkIn, isScheduledToday, isRecovery, lastScheduledDate } = item;
   const [showSkipInput, setShowSkipInput] = useState(false);
   const [skipReason, setSkipReason] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const scheduleLabel =
     habit.schedule.kind === 'daily'
       ? 'Daily'
       : habit.schedule.weekdays.map((w) => WEEKDAY_NAMES[w] ?? w).join(', ');
 
-  const handleSkipSubmit = () => {
-    onCheckIn(habit.id, 'skipped', skipReason.trim() || undefined);
-    setShowSkipInput(false);
-    setSkipReason('');
+  const handleCheckInAction = async (kind: HabitCheckInKind, note?: string) => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      await onCheckIn(habit.id, kind, note);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleSkipSubmit = async () => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      const res = await onCheckIn(habit.id, 'skipped', skipReason.trim() || undefined);
+      // Only close and clear if not an error
+      if (res && typeof res === 'object' && 'ok' in res && !(res as { ok: boolean }).ok) {
+        // Keep skip reason visible on failure
+      } else {
+        setShowSkipInput(false);
+        setSkipReason('');
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleClear = async () => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      await onClearCheckIn(habit.id);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -59,6 +91,7 @@ export function HabitTodayCard({
         checkIn?.kind === 'full' && 'border-emerald-200 bg-emerald-50/40 dark:border-emerald-950 dark:bg-emerald-950/20',
         checkIn?.kind === 'minimum' && 'border-amber-200 bg-amber-50/40 dark:border-amber-950 dark:bg-amber-950/20',
         checkIn?.kind === 'skipped' && 'border-slate-200 bg-slate-50/60 opacity-80 dark:border-[#1e2538] dark:bg-[#161b26]/50',
+        !isScheduledToday && 'border-slate-200/60 bg-slate-50/30 opacity-75 dark:border-[#1e2538] dark:bg-[#161b26]/30',
       )}
     >
       <div className="flex items-start justify-between gap-3">
@@ -75,6 +108,11 @@ export function HabitTodayCard({
             <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500 dark:bg-[#1e2538] dark:text-slate-400">
               {scheduleLabel}
             </span>
+            {!isScheduledToday && (
+              <span className="rounded-md bg-slate-200/80 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:bg-[#1e2538] dark:text-slate-400">
+                Not scheduled today
+              </span>
+            )}
           </div>
 
           {habit.description && (
@@ -141,85 +179,92 @@ export function HabitTodayCard({
         </div>
       </div>
 
-      {/* Recovery Banner */}
-      {isRecovery && !checkIn && (
+      {/* Recovery Banner (Only shown on scheduled days) */}
+      {isScheduledToday && isRecovery && !checkIn && (
         <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50/90 px-3 py-2 text-xs font-medium text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
           <span>⚡ Missed last occurrence {lastScheduledDate ? `on ${lastScheduledDate}` : ''}. Resume today with a small start.</span>
         </div>
       )}
 
-      {/* Check-In Action Row */}
-      <div className="mt-1 flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-[#1e2538]">
-        {!checkIn ? (
-          <>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                variant="primary"
-                className="bg-emerald-600 hover:bg-emerald-500 dark:bg-emerald-600 dark:hover:bg-emerald-500 text-xs px-3 py-1.5"
-                onClick={() => onCheckIn(habit.id, 'full')}
-                aria-label={`Full check-in for ${habit.title}`}
-              >
-                <Check className="h-3.5 w-3.5" /> Full
-              </Button>
+      {/* Check-In Action Row (Only rendered for scheduled days) */}
+      {isScheduledToday && (
+        <div className="mt-1 flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-[#1e2538]">
+          {!checkIn ? (
+            <>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  variant="primary"
+                  className="bg-emerald-600 hover:bg-emerald-500 dark:bg-emerald-600 dark:hover:bg-emerald-500 text-xs px-3 py-1.5"
+                  onClick={() => handleCheckInAction('full')}
+                  disabled={isSubmitting}
+                  aria-label={`Full check-in for ${habit.title}`}
+                >
+                  <Check className="h-3.5 w-3.5" /> Full
+                </Button>
+
+                <Button
+                  variant="secondary"
+                  className="bg-amber-100 hover:bg-amber-200 text-amber-900 dark:bg-amber-900/40 dark:hover:bg-amber-900/60 dark:text-amber-200 text-xs px-3 py-1.5"
+                  onClick={() => handleCheckInAction('minimum')}
+                  disabled={isSubmitting}
+                  aria-label={`Minimum check-in for ${habit.title}`}
+                >
+                  <Sparkles className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" /> Minimum
+                </Button>
+              </div>
 
               <Button
-                variant="secondary"
-                className="bg-amber-100 hover:bg-amber-200 text-amber-900 dark:bg-amber-900/40 dark:hover:bg-amber-900/60 dark:text-amber-200 text-xs px-3 py-1.5"
-                onClick={() => onCheckIn(habit.id, 'minimum')}
-                aria-label={`Minimum check-in for ${habit.title}`}
+                variant="ghost"
+                className="text-xs text-slate-500 hover:text-slate-700 px-2 py-1"
+                onClick={() => setShowSkipInput(!showSkipInput)}
+                disabled={isSubmitting}
               >
-                <Sparkles className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" /> Minimum
+                Skip
+              </Button>
+            </>
+          ) : (
+            <div className="flex items-center justify-between w-full gap-2">
+              <div className="flex items-center gap-2">
+                {checkIn.kind === 'full' && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                    <Check className="h-3.5 w-3.5" /> Full Done
+                  </span>
+                )}
+                {checkIn.kind === 'minimum' && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                    <Sparkles className="h-3.5 w-3.5 text-amber-600" /> Minimum Done
+                  </span>
+                )}
+                {checkIn.kind === 'skipped' && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-slate-200 px-3 py-1 text-xs font-semibold text-slate-700 dark:bg-[#1e2538] dark:text-slate-300">
+                    Skipped {checkIn.note ? `(${checkIn.note})` : ''}
+                  </span>
+                )}
+              </div>
+
+              <Button
+                variant="ghost"
+                className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                onClick={handleClear}
+                disabled={isSubmitting}
+                aria-label={`Undo check-in for ${habit.title}`}
+              >
+                <RotateCcw className="h-3.5 w-3.5" /> Undo
               </Button>
             </div>
-
-            <Button
-              variant="ghost"
-              className="text-xs text-slate-500 hover:text-slate-700 px-2 py-1"
-              onClick={() => setShowSkipInput(!showSkipInput)}
-            >
-              Skip
-            </Button>
-          </>
-        ) : (
-          <div className="flex items-center justify-between w-full gap-2">
-            <div className="flex items-center gap-2">
-              {checkIn.kind === 'full' && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
-                  <Check className="h-3.5 w-3.5" /> Full Done
-                </span>
-              )}
-              {checkIn.kind === 'minimum' && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800 dark:bg-amber-950 dark:text-amber-300">
-                  <Sparkles className="h-3.5 w-3.5 text-amber-600" /> Minimum Done
-                </span>
-              )}
-              {checkIn.kind === 'skipped' && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-slate-200 px-3 py-1 text-xs font-semibold text-slate-700 dark:bg-[#1e2538] dark:text-slate-300">
-                  Skipped {checkIn.note ? `(${checkIn.note})` : ''}
-                </span>
-              )}
-            </div>
-
-            <Button
-              variant="ghost"
-              className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-              onClick={() => onClearCheckIn(habit.id)}
-              aria-label={`Undo check-in for ${habit.title}`}
-            >
-              <RotateCcw className="h-3.5 w-3.5" /> Undo
-            </Button>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
       {/* Skip reason popdown */}
-      {showSkipInput && (
+      {isScheduledToday && showSkipInput && (
         <div className="flex flex-col gap-2 pt-2 border-t border-slate-100 dark:border-[#1e2538]">
           <input
             type="text"
             placeholder="Optional skip reason (e.g. traveling, resting)"
             value={skipReason}
             onChange={(e) => setSkipReason(e.target.value)}
+            disabled={isSubmitting}
             className="h-8 rounded-lg border border-slate-200 bg-slate-50 px-2.5 text-xs text-slate-900 outline-none focus:border-indigo-400 dark:border-[#1e2538] dark:bg-[#161b26] dark:text-white"
           />
           <div className="flex justify-end gap-2">
@@ -227,6 +272,7 @@ export function HabitTodayCard({
               variant="ghost"
               className="text-xs px-2 py-1"
               onClick={() => setShowSkipInput(false)}
+              disabled={isSubmitting}
             >
               Cancel
             </Button>
@@ -234,6 +280,7 @@ export function HabitTodayCard({
               variant="secondary"
               className="text-xs px-3 py-1"
               onClick={handleSkipSubmit}
+              disabled={isSubmitting}
             >
               Confirm Skip
             </Button>

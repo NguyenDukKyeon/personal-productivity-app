@@ -1,107 +1,105 @@
-﻿import { describe, expect, it } from 'vitest';
-import { createHabit } from './habit';
+import { describe, expect, it } from 'vitest';
+import { createHabit, updateHabit } from './habit';
 import { createHabitCheckIn } from './habit-check-in';
 import { calculateHabitMetrics } from './habit-metrics';
-import { createDailySchedule, createWeekdaySchedule } from './habit-schedule';
 
-describe('habit-metrics domain calculation', () => {
-  const daily = createDailySchedule();
-  if (!daily.ok) throw new Error('Schedule error');
-
-  const habit = createHabit({
-    id: 'h1',
-    title: 'Math',
-    minimumVersion: '1 problem',
-    schedule: daily.value,
-  });
-  if (!habit.ok) throw new Error('Habit error');
-
-  it('calculates full, minimum, skipped, missed, and consistency rate accurately', () => {
-    // 7-day window: 2026-08-25 to 2026-08-31 (7 days)
-    const dateRange = [
-      '2026-08-25',
-      '2026-08-26',
-      '2026-08-27',
-      '2026-08-28',
-      '2026-08-29',
-      '2026-08-30',
-      '2026-08-31',
-    ];
-
-    // Precede window with full on 2026-08-24 so 2026-08-25 is not a recovery
-    // Window has: 2 full, 2 minimum, 1 skipped, 2 missed
-    const checkIns = [
-      createHabitCheckIn({ habitId: 'h1', date: '2026-08-24', kind: 'full' }),
-      createHabitCheckIn({ habitId: 'h1', date: '2026-08-25', kind: 'full' }),
-      createHabitCheckIn({ habitId: 'h1', date: '2026-08-26', kind: 'minimum' }),
-      createHabitCheckIn({ habitId: 'h1', date: '2026-08-27', kind: 'full' }),
-      createHabitCheckIn({ habitId: 'h1', date: '2026-08-28', kind: 'skipped' }),
-      createHabitCheckIn({ habitId: 'h1', date: '2026-08-31', kind: 'minimum' }),
-    ].map((r) => {
-      if (!r.ok) throw new Error('Checkin error');
-      return r.value;
+describe('habit-metrics domain logic (lifecycle aware)', () => {
+  it('E: 14-day metrics denominator includes only dates when habit existed and was active', () => {
+    // Habit created today (2026-08-31)
+    const habit = createHabit({
+      id: 'h_read',
+      title: 'Read English',
+      minimumVersion: '1 paragraph',
+      schedule: { kind: 'daily' },
+      nowIso: '2026-08-31T07:00:00.000Z',
     });
+    if (!habit.ok) throw new Error('Habit create failed');
 
-    const metrics = calculateHabitMetrics({
-      habit: habit.value,
-      dateKeys: dateRange,
-      checkIns,
-    });
-
-    expect(metrics.scheduledDays).toBe(7);
-    expect(metrics.fullCount).toBe(2);
-    expect(metrics.minimumCount).toBe(2);
-    expect(metrics.skippedCount).toBe(1);
-    expect(metrics.missedCount).toBe(2); // 2026-08-29 and 2026-08-30 had no check-in
-    // Consistency rate: (2 + 2) / 7 = 4 / 7 = 57%
-    expect(metrics.consistencyRate).toBe(57);
-    // On 2026-08-31, completed minimum immediately following missed 2026-08-30 -> 1 recovery completed
-    expect(metrics.recoveriesCompleted).toBe(1);
-  });
-
-  it('respects non-daily schedules in metrics calculation', () => {
-    // Weekdays Mon, Wed, Fri
-    const mwf = createWeekdaySchedule([1, 3, 5]);
-    if (!mwf.ok) throw new Error('Schedule error');
-
-    const mwfHabit = createHabit({
-      id: 'h2',
-      title: 'Run',
-      minimumVersion: '100m',
-      schedule: mwf.value,
-    });
-    if (!mwfHabit.ok) throw new Error('Habit error');
-
-    // Dates: Mon 2026-08-24 to Sun 2026-08-30
-    // Scheduled days: Mon 24, Wed 26, Fri 28 (3 days)
-    const dateRange = [
-      '2026-08-24', // Mon (scheduled)
-      '2026-08-25', // Tue
-      '2026-08-26', // Wed (scheduled)
-      '2026-08-27', // Thu
-      '2026-08-28', // Fri (scheduled)
-      '2026-08-29', // Sat
-      '2026-08-30', // Sun
+    // 14-day window: 2026-08-18 to 2026-08-31
+    const past14Days = [
+      '2026-08-18', '2026-08-19', '2026-08-20', '2026-08-21', '2026-08-22',
+      '2026-08-23', '2026-08-24', '2026-08-25', '2026-08-26', '2026-08-27',
+      '2026-08-28', '2026-08-29', '2026-08-30', '2026-08-31',
     ];
 
     const checkIns = [
-      createHabitCheckIn({ habitId: 'h2', date: '2026-08-24', kind: 'full' }),
-      createHabitCheckIn({ habitId: 'h2', date: '2026-08-26', kind: 'minimum' }),
+      createHabitCheckIn({
+        habitId: 'h_read',
+        date: '2026-08-31',
+        kind: 'minimum',
+      }),
     ].map((r) => {
       if (!r.ok) throw new Error('CheckIn error');
       return r.value;
     });
 
     const metrics = calculateHabitMetrics({
-      habit: mwfHabit.value,
-      dateKeys: dateRange,
+      habit: habit.value,
+      dateKeys: past14Days,
       checkIns,
     });
 
-    expect(metrics.scheduledDays).toBe(3);
-    expect(metrics.fullCount).toBe(1);
+    // Scheduled days should be ONLY 1 (Aug 31), not 14!
+    expect(metrics.scheduledDays).toBe(1);
     expect(metrics.minimumCount).toBe(1);
-    expect(metrics.missedCount).toBe(1); // Fri 28 was missed
-    expect(metrics.consistencyRate).toBe(67); // 2 / 3 = 67%
+    expect(metrics.fullCount).toBe(0);
+    expect(metrics.missedCount).toBe(0);
+    expect(metrics.consistencyRate).toBe(100);
+    expect(metrics.recoveriesCompleted).toBe(0);
+  });
+
+  it('calculates metrics truthfully across schedule revisions and archive gaps', () => {
+    // Habit created Aug 20 (MWF: Aug 21 Fri, Aug 24 Mon, Aug 26 Wed, Aug 28 Fri = 4 days)
+    const habit = createHabit({
+      id: 'h_run',
+      title: 'Run',
+      minimumVersion: '1 km',
+      schedule: { kind: 'weekdays', weekdays: [1, 3, 5] },
+      nowIso: '2026-08-20T07:00:00.000Z',
+    });
+    if (!habit.ok) throw new Error('Habit error');
+
+    // On Aug 29, change to Daily (Aug 29 Sat, Aug 30 Sun, Aug 31 Mon = 3 days)
+    const updated = updateHabit(
+      habit.value,
+      { schedule: { kind: 'daily' } },
+      '2026-08-29T07:00:00.000Z',
+    );
+    if (!updated.ok) throw new Error('Update error');
+
+    const dateKeys = [
+      '2026-08-20', '2026-08-21', '2026-08-22', '2026-08-23', '2026-08-24',
+      '2026-08-25', '2026-08-26', '2026-08-27', '2026-08-28', '2026-08-29',
+      '2026-08-30', '2026-08-31',
+    ];
+
+    // Check-ins for Aug 21 (Full), Aug 24 (Min), Aug 28 (Full), Aug 31 (Full)
+    const checkIns = [
+      createHabitCheckIn({ habitId: 'h_run', date: '2026-08-21', kind: 'full' }),
+      createHabitCheckIn({ habitId: 'h_run', date: '2026-08-24', kind: 'minimum' }),
+      createHabitCheckIn({ habitId: 'h_run', date: '2026-08-28', kind: 'full' }),
+      createHabitCheckIn({ habitId: 'h_run', date: '2026-08-31', kind: 'full' }),
+    ].map((r) => {
+      if (!r.ok) throw new Error('CheckIn error');
+      return r.value;
+    });
+
+    const metrics = calculateHabitMetrics({
+      habit: updated.value,
+      dateKeys,
+      checkIns,
+    });
+
+    // Scheduled days:
+    // MWF period (Aug 20..28): Aug 21 (Fri), Aug 24 (Mon), Aug 26 (Wed), Aug 28 (Fri) -> 4 days
+    // Daily period (Aug 29..31): Aug 29 (Sat), Aug 30 (Sun), Aug 31 (Mon) -> 3 days
+    // Total scheduled = 7 days
+    // Completed = 4 (Aug 21, 24, 28, 31)
+    // Missed = 3 (Aug 26, Aug 29, Aug 30)
+    expect(metrics.scheduledDays).toBe(7);
+    expect(metrics.fullCount).toBe(3);
+    expect(metrics.minimumCount).toBe(1);
+    expect(metrics.missedCount).toBe(3);
+    expect(metrics.consistencyRate).toBe(Math.round((4 / 7) * 100)); // 57%
   });
 });

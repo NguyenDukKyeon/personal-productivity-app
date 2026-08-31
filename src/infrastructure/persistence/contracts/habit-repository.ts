@@ -19,4 +19,8 @@ export interface HabitRepository {
   listRoutines(): Promise<Result<Routine[]>>;
   saveRoutine(routine: Routine): Promise<Result<void>>;
   deleteRoutine(id: string): Promise<Result<void>>;
+
+  assignHabitToRoutine(habitId: string, routineId: string): Promise<Result<void>>;
+  removeHabitFromRoutine(habitId: string): Promise<Result<void>>;
+  reorderRoutineHabits(routineId: string, habitIds: string[]): Promise<Result<void>>;
 }

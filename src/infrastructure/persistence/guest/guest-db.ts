@@ -45,7 +45,7 @@ export interface GuestTodayDB extends DBSchema {
   habits: {
     key: string;
     value: unknown;
-    indexes: { status: string; routineId: string };
+    indexes: { status: string };
   };
   habitCheckIns: {
     key: string;
@@ -106,7 +106,6 @@ export async function openGuestTodayDb(
       if (!db.objectStoreNames.contains('habits')) {
         const store = db.createObjectStore('habits', { keyPath: 'id' });
         store.createIndex('status', 'status');
-        store.createIndex('routineId', 'routineId');
       }
 
       if (!db.objectStoreNames.contains('habitCheckIns')) {

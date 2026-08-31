@@ -1,6 +1,8 @@
 ﻿import {
   archiveHabit,
   createHabit,
+  isHabitActiveOnDate,
+  isHabitScheduledOnDate,
   unarchiveHabit,
   updateHabit,
   type Habit,
@@ -11,14 +13,9 @@ import {
   type HabitCheckInKind,
 } from '@/domain/habits/habit-check-in';
 import { deriveHabitRecoveryState } from '@/domain/habits/habit-recovery';
+import { type HabitSchedule } from '@/domain/habits/habit-schedule';
 import {
-  isHabitScheduledForDate,
-  type HabitSchedule,
-} from '@/domain/habits/habit-schedule';
-import {
-  addHabitToRoutine,
   createRoutine,
-  removeHabitFromRoutine,
   updateRoutine,
   type Routine,
 } from '@/domain/habits/routine';
@@ -28,6 +25,8 @@ import type { HabitRepository } from '@/infrastructure/persistence/contracts/hab
 
 export interface HabitTodayItem {
   habit: Habit;
+  routineId: string | null;
+  routineName: string | null;
   isScheduledToday: boolean;
   checkIn: HabitCheckIn | null;
   isRecovery: boolean;
@@ -37,12 +36,18 @@ export interface HabitTodayItem {
 
 export interface HabitsViewModel {
   date: string;
-  items: HabitTodayItem[];
+  items: HabitTodayItem[]; // All active habits
+  scheduledTodayItems: HabitTodayItem[]; // Active AND scheduled today
+  unscheduledTodayItems: HabitTodayItem[]; // Active but not scheduled today
   routineGroups: Array<{
     routine: Routine;
     items: HabitTodayItem[];
+    scheduledItems: HabitTodayItem[];
+    unscheduledItems: HabitTodayItem[];
   }>;
   unassignedItems: HabitTodayItem[];
+  unassignedScheduledItems: HabitTodayItem[];
+  unassignedUnscheduledItems: HabitTodayItem[];
   archivedHabits: Habit[];
   metricsSummary: {
     totalScheduledToday: number;
@@ -103,6 +108,7 @@ export interface HabitService {
   getHabitHistory(habitId: string, limitDays?: number): Promise<Result<HabitCheckIn[]>>;
   createRoutine(input: CreateRoutineInput): Promise<Result<Routine>>;
   updateRoutine(id: string, patch: UpdateRoutineInput): Promise<Result<Routine>>;
+  reorderRoutine(id: string, habitIds: string[]): Promise<Result<void>>;
   deleteRoutine(id: string): Promise<Result<void>>;
 }
 
@@ -142,6 +148,15 @@ export function createHabitService(deps: {
 
       const activeHabits = allHabitsRes.value.filter((h) => h.status === 'active');
       const archivedHabits = allHabitsRes.value.filter((h) => h.status === 'archived');
+      const routines = routinesRes.value;
+
+      // Build habit -> routine mapping from canonical Routine.habitIds
+      const habitRoutineMap = new Map<string, { id: string; name: string }>();
+      for (const r of routines) {
+        for (const hid of r.habitIds) {
+          habitRoutineMap.set(hid, { id: r.id, name: r.name });
+        }
+      }
 
       let totalScheduledToday = 0;
       let fullToday = 0;
@@ -150,14 +165,14 @@ export function createHabitService(deps: {
       let inRecoveryToday = 0;
 
       const items: HabitTodayItem[] = activeHabits.map((habit) => {
-        const isScheduledToday = isHabitScheduledForDate(habit.schedule, dateKey);
+        const isScheduledToday = isHabitScheduledOnDate(habit, dateKey);
         const checkIn = todayCheckInsMap.get(habit.id) ?? null;
-        const recoveryState = deriveHabitRecoveryState({
-          habit,
-          currentDateKey: dateKey,
-          checkIns: allCheckIns,
-          lookbackDays: 30,
-        });
+        const routineInfo = habitRoutineMap.get(habit.id) ?? null;
+
+        // Recovery prompts must ONLY appear on scheduled occurrences
+        let isRecovery = false;
+        let lastScheduledDate: string | null = null;
+        let lastCheckIn: HabitCheckIn | null = null;
 
         if (isScheduledToday) {
           totalScheduledToday++;
@@ -165,20 +180,36 @@ export function createHabitService(deps: {
           else if (checkIn?.kind === 'minimum') minimumToday++;
           else if (checkIn?.kind === 'skipped') skippedToday++;
 
-          if (recoveryState.isRecovery) {
+          const recoveryState = deriveHabitRecoveryState({
+            habit,
+            currentDateKey: dateKey,
+            checkIns: allCheckIns,
+            lookbackDays: 30,
+          });
+
+          isRecovery = recoveryState.isRecovery;
+          lastScheduledDate = recoveryState.lastScheduledDate;
+          lastCheckIn = recoveryState.lastCheckIn;
+
+          if (isRecovery) {
             inRecoveryToday++;
           }
         }
 
         return {
           habit,
+          routineId: routineInfo?.id ?? null,
+          routineName: routineInfo?.name ?? null,
           isScheduledToday,
           checkIn,
-          isRecovery: recoveryState.isRecovery,
-          lastScheduledDate: recoveryState.lastScheduledDate,
-          lastCheckIn: recoveryState.lastCheckIn,
+          isRecovery,
+          lastScheduledDate,
+          lastCheckIn,
         };
       });
+
+      const scheduledTodayItems = items.filter((i) => i.isScheduledToday);
+      const unscheduledTodayItems = items.filter((i) => !i.isScheduledToday);
 
       const completedToday = fullToday + minimumToday;
       const pendingToday = Math.max(0, totalScheduledToday - (completedToday + skippedToday));
@@ -188,7 +219,6 @@ export function createHabitService(deps: {
         itemMap.set(item.habit.id, item);
       }
 
-      const routines = routinesRes.value;
       const assignedHabitIds = new Set<string>();
 
       const routineGroups = routines.map((routine) => {
@@ -203,16 +233,24 @@ export function createHabitService(deps: {
         return {
           routine,
           items: groupItems,
+          scheduledItems: groupItems.filter((i) => i.isScheduledToday),
+          unscheduledItems: groupItems.filter((i) => !i.isScheduledToday),
         };
       });
 
       const unassignedItems = items.filter((item) => !assignedHabitIds.has(item.habit.id));
+      const unassignedScheduledItems = unassignedItems.filter((i) => i.isScheduledToday);
+      const unassignedUnscheduledItems = unassignedItems.filter((i) => !i.isScheduledToday);
 
       return ok({
         date: dateKey,
         items,
+        scheduledTodayItems,
+        unscheduledTodayItems,
         routineGroups,
         unassignedItems,
+        unassignedScheduledItems,
+        unassignedUnscheduledItems,
         archivedHabits,
         metricsSummary: {
           totalScheduledToday,
@@ -236,7 +274,6 @@ export function createHabitService(deps: {
         cue: input.cue,
         minimumVersion: input.minimumVersion,
         schedule: input.schedule,
-        routineId: input.routineId,
         nowIso,
       });
       if (!habitRes.ok) return habitRes;
@@ -245,11 +282,8 @@ export function createHabitService(deps: {
       if (!saveRes.ok) return saveRes;
 
       if (input.routineId) {
-        const routineRes = await habitRepository.getRoutine(input.routineId);
-        if (routineRes.ok && routineRes.value) {
-          const updatedRoutine = addHabitToRoutine(routineRes.value, id, nowIso);
-          await habitRepository.saveRoutine(updatedRoutine);
-        }
+        const assignRes = await habitRepository.assignHabitToRoutine(id, input.routineId);
+        if (!assignRes.ok) return assignRes;
       }
 
       return ok(habitRes.value);
@@ -259,11 +293,10 @@ export function createHabitService(deps: {
       const existingRes = await habitRepository.getHabit(id);
       if (!existingRes.ok) return existingRes;
       if (!existingRes.value) {
-        return err('habit_not_found', 'Habit not found');
+        return err('habit_not_found', 'Habit not found.');
       }
 
       const nowIso = now().toISOString();
-      const previousRoutineId = existingRes.value.routineId;
 
       const updatedRes = updateHabit(existingRes.value, patch, nowIso);
       if (!updatedRes.ok) return updatedRes;
@@ -271,21 +304,14 @@ export function createHabitService(deps: {
       const saveRes = await habitRepository.saveHabit(updatedRes.value);
       if (!saveRes.ok) return saveRes;
 
-      // Sync routine membership if changed
-      if (patch.routineId !== undefined && patch.routineId !== previousRoutineId) {
-        if (previousRoutineId) {
-          const oldRoutineRes = await habitRepository.getRoutine(previousRoutineId);
-          if (oldRoutineRes.ok && oldRoutineRes.value) {
-            const removed = removeHabitFromRoutine(oldRoutineRes.value, id, nowIso);
-            await habitRepository.saveRoutine(removed);
-          }
-        }
-        if (patch.routineId) {
-          const newRoutineRes = await habitRepository.getRoutine(patch.routineId);
-          if (newRoutineRes.ok && newRoutineRes.value) {
-            const added = addHabitToRoutine(newRoutineRes.value, id, nowIso);
-            await habitRepository.saveRoutine(added);
-          }
+      // Sync routine membership if patch specified routineId
+      if (patch.routineId !== undefined) {
+        if (patch.routineId === null) {
+          const removeRes = await habitRepository.removeHabitFromRoutine(id);
+          if (!removeRes.ok) return removeRes;
+        } else {
+          const assignRes = await habitRepository.assignHabitToRoutine(id, patch.routineId);
+          if (!assignRes.ok) return assignRes;
         }
       }
 
@@ -296,7 +322,7 @@ export function createHabitService(deps: {
       const existingRes = await habitRepository.getHabit(id);
       if (!existingRes.ok) return existingRes;
       if (!existingRes.value) {
-        return err('habit_not_found', 'Habit not found');
+        return err('habit_not_found', 'Habit not found.');
       }
 
       const nowIso = now().toISOString();
@@ -311,7 +337,7 @@ export function createHabitService(deps: {
       const existingRes = await habitRepository.getHabit(id);
       if (!existingRes.ok) return existingRes;
       if (!existingRes.value) {
-        return err('habit_not_found', 'Habit not found');
+        return err('habit_not_found', 'Habit not found.');
       }
 
       const nowIso = now().toISOString();
@@ -323,10 +349,29 @@ export function createHabitService(deps: {
     },
 
     async recordCheckIn(input: RecordCheckInInput): Promise<Result<HabitCheckIn>> {
+      const todayKey = toLocalDateKey(now());
+
+      // 1. Reject future dates
+      if (input.date > todayKey) {
+        return err('future_check_in_not_allowed', 'Check-ins for future dates are not allowed.');
+      }
+
+      // 2. Reject unknown habit
       const habitRes = await habitRepository.getHabit(input.habitId);
       if (!habitRes.ok) return habitRes;
       if (!habitRes.value) {
-        return err('habit_not_found', 'Habit not found');
+        return err('habit_not_found', 'Habit not found.');
+      }
+      const habit = habitRes.value;
+
+      // 3. Reject inactive / outside lifecycle habit
+      if (!isHabitActiveOnDate(habit, input.date)) {
+        return err('habit_inactive', `Habit is not active on ${input.date}.`);
+      }
+
+      // 4. Reject unscheduled dates
+      if (!isHabitScheduledOnDate(habit, input.date)) {
+        return err('habit_not_scheduled', `Habit is not scheduled on ${input.date}.`);
       }
 
       const nowIso = now().toISOString();
@@ -383,7 +428,7 @@ export function createHabitService(deps: {
       const existingRes = await habitRepository.getRoutine(id);
       if (!existingRes.ok) return existingRes;
       if (!existingRes.value) {
-        return err('routine_not_found', 'Routine not found');
+        return err('routine_not_found', 'Routine not found.');
       }
 
       const nowIso = now().toISOString();
@@ -396,17 +441,11 @@ export function createHabitService(deps: {
       return ok(updatedRes.value);
     },
 
+    async reorderRoutine(id: string, habitIds: string[]): Promise<Result<void>> {
+      return habitRepository.reorderRoutineHabits(id, habitIds);
+    },
+
     async deleteRoutine(id: string): Promise<Result<void>> {
-      const habitsRes = await habitRepository.listHabits(true);
-      if (habitsRes.ok) {
-        const linkedHabits = habitsRes.value.filter((h) => h.routineId === id);
-        for (const habit of linkedHabits) {
-          const unlinked = updateHabit(habit, { routineId: null }, now().toISOString());
-          if (unlinked.ok) {
-            await habitRepository.saveHabit(unlinked.value);
-          }
-        }
-      }
       return habitRepository.deleteRoutine(id);
     },
   };

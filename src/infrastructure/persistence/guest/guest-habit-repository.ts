@@ -1,9 +1,20 @@
-﻿import type { IDBPDatabase } from 'idb';
+import type { IDBPDatabase } from 'idb';
 import { z } from 'zod';
-import { type Habit } from '@/domain/habits/habit';
-import { type HabitCheckIn } from '@/domain/habits/habit-check-in';
+import {
+  validateHabitPreWrite,
+  type Habit,
+  type HabitLifecycleInterval,
+  type HabitScheduleRevision,
+} from '@/domain/habits/habit';
+import {
+  validateCheckInPreWrite,
+  type HabitCheckIn,
+} from '@/domain/habits/habit-check-in';
 import { type HabitSchedule, type WeekdayNumber } from '@/domain/habits/habit-schedule';
-import { type Routine } from '@/domain/habits/routine';
+import {
+  validateRoutinePreWrite,
+  type Routine,
+} from '@/domain/habits/routine';
 import { parseLocalDateKey } from '@/domain/shared/local-date';
 import { err, ok, type Result } from '@/domain/shared/result';
 import type { HabitRepository } from '@/infrastructure/persistence/contracts/habit-repository';
@@ -35,6 +46,16 @@ const habitScheduleSchema: z.ZodType<HabitSchedule> = z.discriminatedUnion('kind
   }),
 ]);
 
+const habitScheduleRevisionSchema: z.ZodType<HabitScheduleRevision> = z.object({
+  effectiveFromDate: z.string(),
+  schedule: habitScheduleSchema,
+});
+
+const habitLifecycleIntervalSchema: z.ZodType<HabitLifecycleInterval> = z.object({
+  startDate: z.string(),
+  endDate: z.string().nullable(),
+});
+
 const habitSchema: z.ZodType<Habit> = z.object({
   id: z.string().min(1),
   title: z.string().min(1).max(120),
@@ -42,7 +63,8 @@ const habitSchema: z.ZodType<Habit> = z.object({
   cue: z.string().max(120),
   minimumVersion: z.string().min(1).max(160),
   schedule: habitScheduleSchema,
-  routineId: z.string().nullable(),
+  scheduleRevisions: z.array(habitScheduleRevisionSchema).min(1),
+  activeIntervals: z.array(habitLifecycleIntervalSchema).min(1),
   status: z.enum(['active', 'archived']),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -67,6 +89,16 @@ const routineSchema: z.ZodType<Routine> = z.object({
   updatedAt: z.string(),
 });
 
+function computeUpdatedAt(createdAt: string, nowIso?: string): string {
+  const now = nowIso ?? new Date().toISOString();
+  const createdMs = new Date(createdAt).getTime();
+  const nowMs = new Date(now).getTime();
+  if (nowMs < createdMs) {
+    return createdAt;
+  }
+  return now;
+}
+
 function validateStoredDate(date: string): Result<void> {
   return parseLocalDateKey(date) ? ok(undefined) : err('corrupt_record', CORRUPT_RECORD_MESSAGE);
 }
@@ -89,19 +121,20 @@ function parseRecord<T>(
   return ok(parsed.data);
 }
 
-function parseValidRecords<T>(
+function parseAllRecords<T>(
   schema: z.ZodType<T>,
   values: unknown[],
   validate?: (record: T) => Result<unknown>,
-): T[] {
-  const valid: T[] = [];
+): Result<T[]> {
+  const parsed: T[] = [];
   for (const val of values) {
     const res = parseRecord(schema, val, validate);
-    if (res.ok) {
-      valid.push(res.value);
+    if (!res.ok) {
+      return err('corrupt_record', CORRUPT_RECORD_MESSAGE);
     }
+    parsed.push(res.value);
   }
-  return valid;
+  return ok(parsed);
 }
 
 function readFailed(): Result<never> {
@@ -119,7 +152,7 @@ export class GuestHabitRepository implements HabitRepository {
     try {
       const raw = await this.db.get('habits', id);
       if (raw === undefined) return ok(null);
-      return parseRecord(habitSchema, raw);
+      return parseRecord(habitSchema, raw, validateHabitPreWrite);
     } catch {
       return readFailed();
     }
@@ -128,17 +161,24 @@ export class GuestHabitRepository implements HabitRepository {
   async listHabits(includeArchived = false): Promise<Result<Habit[]>> {
     try {
       const rawList = await this.db.getAll('habits');
-      const validHabits = parseValidRecords(habitSchema, rawList);
-      if (includeArchived) {
-        return ok(validHabits);
+      const allRes = parseAllRecords(habitSchema, rawList, validateHabitPreWrite);
+      if (!allRes.ok) {
+        return allRes;
       }
-      return ok(validHabits.filter((h) => h.status === 'active'));
+      if (includeArchived) {
+        return ok(allRes.value);
+      }
+      return ok(allRes.value.filter((h) => h.status === 'active'));
     } catch {
       return readFailed();
     }
   }
 
   async saveHabit(habit: Habit): Promise<Result<void>> {
+    const validation = validateHabitPreWrite(habit);
+    if (!validation.ok) {
+      return err('invalid_data', validation.message);
+    }
     try {
       await this.db.put('habits', habit);
       return ok(undefined);
@@ -153,7 +193,10 @@ export class GuestHabitRepository implements HabitRepository {
       const index = tx.store.index('habitId_date');
       const raw = await index.get([habitId, dateKey]);
       if (raw === undefined) return ok(null);
-      return parseRecord(habitCheckInSchema, raw, (c) => validateStoredDate(c.date));
+      return parseRecord(habitCheckInSchema, raw, (c) => {
+        const d = validateStoredDate(c.date);
+        return d.ok ? validateCheckInPreWrite(c) : d;
+      });
     } catch {
       return readFailed();
     }
@@ -164,8 +207,10 @@ export class GuestHabitRepository implements HabitRepository {
       const tx = this.db.transaction('habitCheckIns', 'readonly');
       const index = tx.store.index('habitId');
       const rawList = await index.getAll(habitId);
-      const valid = parseValidRecords(habitCheckInSchema, rawList, (c) => validateStoredDate(c.date));
-      return ok(valid);
+      return parseAllRecords(habitCheckInSchema, rawList, (c) => {
+        const d = validateStoredDate(c.date);
+        return d.ok ? validateCheckInPreWrite(c) : d;
+      });
     } catch {
       return readFailed();
     }
@@ -176,8 +221,10 @@ export class GuestHabitRepository implements HabitRepository {
       const tx = this.db.transaction('habitCheckIns', 'readonly');
       const index = tx.store.index('date');
       const rawList = await index.getAll(dateKey);
-      const valid = parseValidRecords(habitCheckInSchema, rawList, (c) => validateStoredDate(c.date));
-      return ok(valid);
+      return parseAllRecords(habitCheckInSchema, rawList, (c) => {
+        const d = validateStoredDate(c.date);
+        return d.ok ? validateCheckInPreWrite(c) : d;
+      });
     } catch {
       return readFailed();
     }
@@ -186,8 +233,14 @@ export class GuestHabitRepository implements HabitRepository {
   async listCheckInsInRange(startDateKey: string, endDateKey: string): Promise<Result<HabitCheckIn[]>> {
     try {
       const rawList = await this.db.getAll('habitCheckIns');
-      const valid = parseValidRecords(habitCheckInSchema, rawList, (c) => validateStoredDate(c.date));
-      const filtered = valid.filter((c) => c.date >= startDateKey && c.date <= endDateKey);
+      const allRes = parseAllRecords(habitCheckInSchema, rawList, (c) => {
+        const d = validateStoredDate(c.date);
+        return d.ok ? validateCheckInPreWrite(c) : d;
+      });
+      if (!allRes.ok) {
+        return allRes;
+      }
+      const filtered = allRes.value.filter((c) => c.date >= startDateKey && c.date <= endDateKey);
       return ok(filtered);
     } catch {
       return readFailed();
@@ -195,17 +248,33 @@ export class GuestHabitRepository implements HabitRepository {
   }
 
   async saveCheckIn(checkIn: HabitCheckIn): Promise<Result<void>> {
+    const validation = validateCheckInPreWrite(checkIn);
+    if (!validation.ok) {
+      return err('invalid_data', validation.message);
+    }
     try {
       const tx = this.db.transaction('habitCheckIns', 'readwrite');
       const index = tx.store.index('habitId_date');
       const existing = await index.get([checkIn.habitId, checkIn.date]);
 
-      if (existing && typeof existing === 'object' && 'id' in existing && existing.id !== checkIn.id) {
-        // Replace existing same-day record atomically to enforce uniqueness
-        await tx.store.delete(existing.id as string);
+      let recordToSave = checkIn;
+      if (existing && typeof existing === 'object') {
+        const parsedExisting = habitCheckInSchema.safeParse(existing);
+        const originalCreatedAt = parsedExisting.success ? parsedExisting.data.createdAt : checkIn.createdAt;
+
+        if ('id' in existing && existing.id !== checkIn.id) {
+          await tx.store.delete(existing.id as string);
+        }
+
+        // Preserve original createdAt audit timestamp
+        recordToSave = {
+          ...checkIn,
+          createdAt: originalCreatedAt,
+          updatedAt: computeUpdatedAt(originalCreatedAt, checkIn.updatedAt),
+        };
       }
 
-      await tx.store.put(checkIn);
+      await tx.store.put(recordToSave);
       await tx.done;
       return ok(undefined);
     } catch {
@@ -232,7 +301,7 @@ export class GuestHabitRepository implements HabitRepository {
     try {
       const raw = await this.db.get('routines', id);
       if (raw === undefined) return ok(null);
-      return parseRecord(routineSchema, raw);
+      return parseRecord(routineSchema, raw, validateRoutinePreWrite);
     } catch {
       return readFailed();
     }
@@ -241,14 +310,17 @@ export class GuestHabitRepository implements HabitRepository {
   async listRoutines(): Promise<Result<Routine[]>> {
     try {
       const rawList = await this.db.getAll('routines');
-      const valid = parseValidRecords(routineSchema, rawList);
-      return ok(valid);
+      return parseAllRecords(routineSchema, rawList, validateRoutinePreWrite);
     } catch {
       return readFailed();
     }
   }
 
   async saveRoutine(routine: Routine): Promise<Result<void>> {
+    const validation = validateRoutinePreWrite(routine);
+    if (!validation.ok) {
+      return err('invalid_data', validation.message);
+    }
     try {
       await this.db.put('routines', routine);
       return ok(undefined);
@@ -260,6 +332,138 @@ export class GuestHabitRepository implements HabitRepository {
   async deleteRoutine(id: string): Promise<Result<void>> {
     try {
       await this.db.delete('routines', id);
+      return ok(undefined);
+    } catch {
+      return writeFailed();
+    }
+  }
+
+  async assignHabitToRoutine(habitId: string, routineId: string): Promise<Result<void>> {
+    const trimmedHabitId = habitId.trim();
+    const trimmedRoutineId = routineId.trim();
+    if (!trimmedHabitId) return err('invalid_habit_id', 'Habit ID cannot be empty.');
+    if (!trimmedRoutineId) return err('invalid_routine_id', 'Routine ID cannot be empty.');
+
+    try {
+      const tx = this.db.transaction(['habits', 'routines'], 'readwrite');
+      const habitStore = tx.objectStore('habits');
+      const routineStore = tx.objectStore('routines');
+
+      const habit = await habitStore.get(trimmedHabitId);
+      if (!habit) {
+        return err('habit_not_found', `Habit "${trimmedHabitId}" does not exist.`);
+      }
+
+      const targetRoutineRaw = await routineStore.get(trimmedRoutineId);
+      if (!targetRoutineRaw) {
+        return err('routine_not_found', `Routine "${trimmedRoutineId}" does not exist.`);
+      }
+
+      const parsedTarget = routineSchema.safeParse(targetRoutineRaw);
+      if (!parsedTarget.success) {
+        return err('corrupt_record', CORRUPT_RECORD_MESSAGE);
+      }
+      const targetRoutine = parsedTarget.data;
+
+      // Remove habit from all other routines atomically
+      const allRoutinesRaw = await routineStore.getAll();
+      for (const raw of allRoutinesRaw) {
+        const p = routineSchema.safeParse(raw);
+        if (p.success && p.data.id !== trimmedRoutineId && p.data.habitIds.includes(trimmedHabitId)) {
+          const updatedOther: Routine = {
+            ...p.data,
+            habitIds: p.data.habitIds.filter((id) => id !== trimmedHabitId),
+            updatedAt: computeUpdatedAt(p.data.createdAt),
+          };
+          await routineStore.put(updatedOther);
+        }
+      }
+
+      // Add habit to target routine if not already in habitIds
+      if (!targetRoutine.habitIds.includes(trimmedHabitId)) {
+        const updatedTarget: Routine = {
+          ...targetRoutine,
+          habitIds: [...targetRoutine.habitIds, trimmedHabitId],
+          updatedAt: computeUpdatedAt(targetRoutine.createdAt),
+        };
+        await routineStore.put(updatedTarget);
+      }
+
+      await tx.done;
+      return ok(undefined);
+    } catch {
+      return writeFailed();
+    }
+  }
+
+  async removeHabitFromRoutine(habitId: string): Promise<Result<void>> {
+    const trimmedHabitId = habitId.trim();
+    if (!trimmedHabitId) return err('invalid_habit_id', 'Habit ID cannot be empty.');
+
+    try {
+      const tx = this.db.transaction(['routines'], 'readwrite');
+      const routineStore = tx.objectStore('routines');
+      const allRoutinesRaw = await routineStore.getAll();
+
+      for (const raw of allRoutinesRaw) {
+        const p = routineSchema.safeParse(raw);
+        if (p.success && p.data.habitIds.includes(trimmedHabitId)) {
+          const updated: Routine = {
+            ...p.data,
+            habitIds: p.data.habitIds.filter((id) => id !== trimmedHabitId),
+            updatedAt: computeUpdatedAt(p.data.createdAt),
+          };
+          await routineStore.put(updated);
+        }
+      }
+
+      await tx.done;
+      return ok(undefined);
+    } catch {
+      return writeFailed();
+    }
+  }
+
+  async reorderRoutineHabits(routineId: string, habitIds: string[]): Promise<Result<void>> {
+    const trimmedRoutineId = routineId.trim();
+    if (!trimmedRoutineId) return err('invalid_routine_id', 'Routine ID cannot be empty.');
+
+    try {
+      const tx = this.db.transaction(['routines'], 'readwrite');
+      const routineStore = tx.objectStore('routines');
+      const raw = await routineStore.get(trimmedRoutineId);
+      if (!raw) {
+        return err('routine_not_found', `Routine "${trimmedRoutineId}" does not exist.`);
+      }
+
+      const p = routineSchema.safeParse(raw);
+      if (!p.success) {
+        return err('corrupt_record', CORRUPT_RECORD_MESSAGE);
+      }
+
+      const deduplicated: string[] = [];
+      const seen = new Set<string>();
+      for (const hId of habitIds) {
+        const trimmed = hId.trim();
+        if (trimmed && !seen.has(trimmed)) {
+          seen.add(trimmed);
+          deduplicated.push(trimmed);
+        }
+      }
+
+      const updated: Routine = {
+        ...p.data,
+        habitIds: deduplicated,
+        updatedAt: computeUpdatedAt(p.data.createdAt),
+      };
+
+      const validation = validateRoutinePreWrite(updated);
+      if (!validation.ok) {
+        return err('invalid_data', validation.message);
+      }
+
+      await routineStore.put(updated);
+      await tx.done;
       return ok(undefined);
     } catch {
       return writeFailed();
