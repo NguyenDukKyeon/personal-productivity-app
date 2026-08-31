@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 
+const BANGKOK_TODAY = new Date('2026-08-31T01:00:00.000Z'); // 08:00 Asia/Bangkok
+
 test.describe('Habits & Routines Acceptance Journeys', () => {
   test('Journey 1: creates a habit with Cue + Minimum version, marks Full, reloads, and persists as Full', async ({
     page,
@@ -68,6 +70,7 @@ test.describe('Habits & Routines Acceptance Journeys', () => {
   test('Journey 3: simulates missed scheduled day in controlled date environment, recovers with Minimum, and persists', async ({
     page,
   }) => {
+    await page.clock.setFixedTime(BANGKOK_TODAY);
     await page.goto('/habits');
     await expect(page.getByRole('heading', { name: 'Habits & Routines' })).toBeVisible();
 
@@ -79,8 +82,18 @@ test.describe('Habits & Routines Acceptance Journeys', () => {
     await page.getByRole('button', { name: 'Save Habit' }).click();
     await expect(page.getByRole('heading', { name: 'Morning Jog' })).toBeVisible();
 
-    // 2. Adjust creation date & lifecycle to 2 days ago so yesterday counts as a missed occurrence
+    // 2. Backdate creation using local-calendar arithmetic (Asia/Bangkok), never UTC ISO slicing
     await page.evaluate(async () => {
+      function toLocalDateKey(d: Date): string {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+      }
+      const now = new Date();
+      const twoDaysAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 2);
+      const twoDaysAgoKey = toLocalDateKey(twoDaysAgo);
+
       const db = await new Promise<IDBDatabase>((resolve, reject) => {
         const req = indexedDB.open('personal-productivity-guest');
         req.onsuccess = () => resolve(req.result);
@@ -94,10 +107,9 @@ test.describe('Habits & Routines Acceptance Journeys', () => {
           const habits = getAllReq.result;
           const jog = habits.find((h: { title: string }) => h.title === 'Morning Jog');
           if (jog) {
-            const twoDaysAgo = new Date(Date.now() - 2 * 86400000).toISOString().slice(0, 10);
-            jog.createdAt = new Date(Date.now() - 2 * 86400000).toISOString();
-            jog.activeIntervals = [{ startDate: twoDaysAgo, endDate: null }];
-            jog.scheduleRevisions = [{ effectiveFromDate: twoDaysAgo, schedule: { kind: 'daily' } }];
+            jog.createdAt = twoDaysAgo.toISOString();
+            jog.activeIntervals = [{ startDate: twoDaysAgoKey, endDate: null }];
+            jog.scheduleRevisions = [{ effectiveFromDate: twoDaysAgoKey, schedule: { kind: 'daily' } }];
             store.put(jog);
           }
           resolve();
@@ -127,7 +139,7 @@ test.describe('Habits & Routines Acceptance Journeys', () => {
     await expect(page.getByText('Minimum Done')).toBeVisible();
   });
 
-  test('Journey 4: creates two habits, creates a routine, assigns both, and persists across reload', async ({
+  test('Journey 4: creates two habits, creates a routine, assigns both, reorders, and persists exact order', async ({
     page,
   }) => {
     await page.goto('/habits');
@@ -169,16 +181,17 @@ test.describe('Habits & Routines Acceptance Journeys', () => {
     await page.getByLabel('Assign to Routine (Optional)').selectOption({ label: 'Morning Launchpad (07:00)' });
     await page.getByRole('button', { name: 'Save Changes' }).click();
 
-    // Verify both are grouped in routine
     const routineSection = page.locator('section').filter({ hasText: 'Morning Launchpad' });
     await expect(routineSection.getByRole('heading', { name: 'Drink Water' })).toBeVisible();
     await expect(routineSection.getByRole('heading', { name: 'Stretching' })).toBeVisible();
 
-    // Reload page and assert persistence
+    // Reorder Stretching above Drink Water and persist
+    await routineSection.getByRole('button', { name: 'Move Stretching up' }).click();
+    await expect(routineSection.locator('h3')).toHaveText(['Stretching', 'Drink Water']);
+
     await page.reload();
 
     const routineSectionAfter = page.locator('section').filter({ hasText: 'Morning Launchpad' });
-    await expect(routineSectionAfter.getByRole('heading', { name: 'Drink Water' })).toBeVisible();
-    await expect(routineSectionAfter.getByRole('heading', { name: 'Stretching' })).toBeVisible();
+    await expect(routineSectionAfter.locator('h3')).toHaveText(['Stretching', 'Drink Water']);
   });
 });

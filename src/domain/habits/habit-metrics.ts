@@ -1,4 +1,5 @@
-﻿import { isHabitScheduledOnDate, type Habit } from './habit';
+﻿import { toLocalDateKey } from '../shared/local-date';
+import { isHabitScheduledOnDate, type Habit } from './habit';
 import type { HabitCheckIn } from './habit-check-in';
 import { deriveHabitRecoveryState } from './habit-recovery';
 
@@ -8,19 +9,30 @@ export interface HabitMetrics {
   minimumCount: number;
   skippedCount: number;
   missedCount: number;
-  consistencyRate: number; // 0..100 percent
+  pendingCount: number;
+  consistencyRate: number; // 0..100 percent of completed historical scheduled days
   recoveriesCompleted: number;
 }
 
+/**
+ * Historical consistency distinguishes pending from missed:
+ * - past scheduled date + no check-in = missed
+ * - current asOfDateKey + no check-in = pending (not in the historical
+ *   completed denominator — a 14-day rate at 08:00 must not punish today)
+ * - after today's completion, today enters the denominator correctly
+ */
 export function calculateHabitMetrics({
   habit,
   dateKeys,
   checkIns,
+  asOfDateKey,
 }: {
   habit: Habit;
   dateKeys: string[];
   checkIns: HabitCheckIn[];
+  asOfDateKey?: string;
 }): HabitMetrics {
+  const asOf = asOfDateKey ?? toLocalDateKey(new Date());
   const checkInMap = new Map<string, HabitCheckIn>();
   for (const c of checkIns) {
     if (c.habitId === habit.id) {
@@ -32,6 +44,8 @@ export function calculateHabitMetrics({
   let fullCount = 0;
   let minimumCount = 0;
   let skippedCount = 0;
+  let missedCount = 0;
+  let pendingCount = 0;
   let recoveriesCompleted = 0;
 
   for (const dateKey of dateKeys) {
@@ -43,7 +57,11 @@ export function calculateHabitMetrics({
     const checkIn = checkInMap.get(dateKey);
 
     if (!checkIn) {
-      // Missed opportunity
+      if (dateKey < asOf) {
+        missedCount++;
+      } else if (dateKey === asOf) {
+        pendingCount++;
+      }
       continue;
     }
 
@@ -70,11 +88,11 @@ export function calculateHabitMetrics({
   }
 
   const completedCount = fullCount + minimumCount;
-  const missedCount = scheduledDays - (completedCount + skippedCount);
+  const historicalDenominator = scheduledDays - pendingCount;
   const consistencyRate =
-    scheduledDays === 0
+    historicalDenominator <= 0
       ? 0
-      : Math.max(0, Math.min(100, Math.round((completedCount / scheduledDays) * 100)));
+      : Math.max(0, Math.min(100, Math.round((completedCount / historicalDenominator) * 100)));
 
   return {
     scheduledDays,
@@ -82,6 +100,7 @@ export function calculateHabitMetrics({
     minimumCount,
     skippedCount,
     missedCount,
+    pendingCount,
     consistencyRate,
     recoveriesCompleted,
   };

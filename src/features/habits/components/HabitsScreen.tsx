@@ -222,6 +222,17 @@ export function HabitsScreen({ service, initialDate }: HabitsScreenProps) {
               onArchiveHabit={(habitId) => controller.archiveHabit(habitId)}
               onViewHistory={(habit) => setHistoryHabit(habit)}
               onDeleteRoutine={(routineId) => controller.deleteRoutine(routineId)}
+              onMoveHabit={(habitId, direction) => {
+                const ids = [...group.routine.habitIds];
+                const idx = ids.indexOf(habitId);
+                const swap = direction === 'up' ? idx - 1 : idx + 1;
+                if (idx < 0 || swap < 0 || swap >= ids.length) return;
+                const next = [...ids];
+                const current = next[idx];
+                next[idx] = next[swap];
+                next[swap] = current;
+                void controller.reorderRoutine(group.routine.id, next);
+              }}
             />
           ))}
 

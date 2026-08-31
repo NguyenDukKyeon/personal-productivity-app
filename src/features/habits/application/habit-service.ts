@@ -88,13 +88,11 @@ export interface RecordCheckInInput {
 export interface CreateRoutineInput {
   name: string;
   contextLabel?: string;
-  habitIds?: string[];
 }
 
 export interface UpdateRoutineInput {
   name?: string;
   contextLabel?: string;
-  habitIds?: string[];
 }
 
 export interface HabitService {
@@ -278,13 +276,11 @@ export function createHabitService(deps: {
       });
       if (!habitRes.ok) return habitRes;
 
-      const saveRes = await habitRepository.saveHabit(habitRes.value);
+      const saveRes = await habitRepository.createHabitWithRoutine(
+        habitRes.value,
+        input.routineId ?? null,
+      );
       if (!saveRes.ok) return saveRes;
-
-      if (input.routineId) {
-        const assignRes = await habitRepository.assignHabitToRoutine(id, input.routineId);
-        if (!assignRes.ok) return assignRes;
-      }
 
       return ok(habitRes.value);
     },
@@ -301,19 +297,12 @@ export function createHabitService(deps: {
       const updatedRes = updateHabit(existingRes.value, patch, nowIso);
       if (!updatedRes.ok) return updatedRes;
 
-      const saveRes = await habitRepository.saveHabit(updatedRes.value);
+      const saveRes = await habitRepository.updateHabitWithRoutine(
+        existingRes.value,
+        updatedRes.value,
+        patch.routineId,
+      );
       if (!saveRes.ok) return saveRes;
-
-      // Sync routine membership if patch specified routineId
-      if (patch.routineId !== undefined) {
-        if (patch.routineId === null) {
-          const removeRes = await habitRepository.removeHabitFromRoutine(id);
-          if (!removeRes.ok) return removeRes;
-        } else {
-          const assignRes = await habitRepository.assignHabitToRoutine(id, patch.routineId);
-          if (!assignRes.ok) return assignRes;
-        }
-      }
 
       return ok(updatedRes.value);
     },
@@ -326,11 +315,12 @@ export function createHabitService(deps: {
       }
 
       const nowIso = now().toISOString();
-      const archived = archiveHabit(existingRes.value, nowIso);
-      const saveRes = await habitRepository.saveHabit(archived);
+      const archivedRes = archiveHabit(existingRes.value, nowIso);
+      if (!archivedRes.ok) return archivedRes;
+      const saveRes = await habitRepository.saveHabit(archivedRes.value);
       if (!saveRes.ok) return saveRes;
 
-      return ok(archived);
+      return ok(archivedRes.value);
     },
 
     async unarchiveHabit(id: string): Promise<Result<Habit>> {
@@ -341,11 +331,12 @@ export function createHabitService(deps: {
       }
 
       const nowIso = now().toISOString();
-      const unarchived = unarchiveHabit(existingRes.value, nowIso);
-      const saveRes = await habitRepository.saveHabit(unarchived);
+      const unarchivedRes = unarchiveHabit(existingRes.value, nowIso);
+      if (!unarchivedRes.ok) return unarchivedRes;
+      const saveRes = await habitRepository.saveHabit(unarchivedRes.value);
       if (!saveRes.ok) return saveRes;
 
-      return ok(unarchived);
+      return ok(unarchivedRes.value);
     },
 
     async recordCheckIn(input: RecordCheckInInput): Promise<Result<HabitCheckIn>> {
@@ -413,7 +404,6 @@ export function createHabitService(deps: {
         id,
         name: input.name,
         contextLabel: input.contextLabel,
-        habitIds: input.habitIds,
         nowIso,
       });
       if (!routineRes.ok) return routineRes;

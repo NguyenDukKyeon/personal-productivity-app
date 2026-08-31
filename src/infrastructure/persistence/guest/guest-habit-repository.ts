@@ -1,4 +1,4 @@
-import type { IDBPDatabase } from 'idb';
+import type { IDBPDatabase, IDBPObjectStore } from 'idb';
 import { z } from 'zod';
 import {
   validateHabitPreWrite,
@@ -27,6 +27,9 @@ export interface GuestHabitRepositoryOptions {
 const CORRUPT_RECORD_MESSAGE = 'Stored data is invalid and was left untouched.';
 const READ_FAILED_MESSAGE = 'Failed to read guest habit data.';
 const WRITE_FAILED_MESSAGE = 'Failed to write guest habit data.';
+
+type HabitStore = IDBPObjectStore<GuestTodayDB, ('habits' | 'routines')[], 'habits', 'readwrite'>;
+type RoutineStore = IDBPObjectStore<GuestTodayDB, ('habits' | 'routines')[], 'routines', 'readwrite'>;
 
 const weekdayNumberSchema: z.ZodType<WeekdayNumber> = z.union([
   z.literal(1),
@@ -145,8 +148,42 @@ function writeFailed(): Result<never> {
   return err('persistence_write_failed', WRITE_FAILED_MESSAGE);
 }
 
+function abortTx(tx: { abort: () => void }): void {
+  try {
+    tx.abort();
+  } catch {
+    // Transaction may already be aborting.
+  }
+}
+
+async function settleAborted(tx: { abort: () => void; done: Promise<unknown> }): Promise<void> {
+  abortTx(tx);
+  try {
+    await tx.done;
+  } catch {
+    // Expected: abort rejects the transaction completion promise.
+  }
+}
+
 export class GuestHabitRepository implements HabitRepository {
+  /**
+   * Test-only hook. When true, the next atomic write aborts the open
+   * IndexedDB transaction after its staged puts and returns
+   * persistence_write_failed — no compensation writes.
+   */
+  failNextWrite = false;
+
   constructor(private readonly db: IDBPDatabase<GuestTodayDB>) {}
+
+  private async settleForcedFailure(tx: {
+    abort: () => void;
+    done: Promise<unknown>;
+  }): Promise<Result<never> | null> {
+    if (!this.failNextWrite) return null;
+    this.failNextWrite = false;
+    await settleAborted(tx);
+    return writeFailed();
+  }
 
   async getHabit(id: string): Promise<Result<Habit | null>> {
     try {
@@ -180,7 +217,108 @@ export class GuestHabitRepository implements HabitRepository {
       return err('invalid_data', validation.message);
     }
     try {
-      await this.db.put('habits', habit);
+      const tx = this.db.transaction('habits', 'readwrite');
+      const existing = await tx.store.get(habit.id);
+      if (existing !== undefined) {
+        const parsedExisting = parseRecord(habitSchema, existing, validateHabitPreWrite);
+        if (!parsedExisting.ok) {
+          await settleAborted(tx);
+          return err('corrupt_record', CORRUPT_RECORD_MESSAGE);
+        }
+      }
+      await tx.store.put(habit);
+      const forced = await this.settleForcedFailure(tx);
+      if (forced) return forced;
+      await tx.done;
+      return ok(undefined);
+    } catch {
+      return writeFailed();
+    }
+  }
+
+  async createHabitWithRoutine(habit: Habit, routineId: string | null): Promise<Result<void>> {
+    const validation = validateHabitPreWrite(habit);
+    if (!validation.ok) {
+      return err('invalid_data', validation.message);
+    }
+    try {
+      const tx = this.db.transaction(['habits', 'routines'], 'readwrite');
+      const habitStore = tx.objectStore('habits');
+      const routineStore = tx.objectStore('routines');
+
+      await habitStore.put(habit);
+
+      if (routineId) {
+        const assignRes = await this.assignWithinTx(habitStore, routineStore, habit.id, routineId);
+        if (!assignRes.ok) {
+          await settleAborted(tx);
+          return assignRes;
+        }
+      }
+
+      const forced = await this.settleForcedFailure(tx);
+      if (forced) return forced;
+      await tx.done;
+      return ok(undefined);
+    } catch {
+      return writeFailed();
+    }
+  }
+
+  async updateHabitWithRoutine(
+    previousHabit: Habit,
+    nextHabit: Habit,
+    routineId?: string | null,
+  ): Promise<Result<void>> {
+    if (previousHabit.id !== nextHabit.id) {
+      return err('invalid_habit_id', 'Habit identity cannot change during update.');
+    }
+    const validation = validateHabitPreWrite(nextHabit);
+    if (!validation.ok) {
+      return err('invalid_data', validation.message);
+    }
+    try {
+      const tx = this.db.transaction(['habits', 'routines'], 'readwrite');
+      const habitStore = tx.objectStore('habits');
+      const routineStore = tx.objectStore('routines');
+
+      const existingRaw = await habitStore.get(nextHabit.id);
+      if (existingRaw === undefined) {
+        await settleAborted(tx);
+        return err('habit_not_found', 'Habit not found.');
+      }
+      const existing = parseRecord(habitSchema, existingRaw, validateHabitPreWrite);
+      if (!existing.ok) {
+        await settleAborted(tx);
+        return err('corrupt_record', CORRUPT_RECORD_MESSAGE);
+      }
+
+      await habitStore.put(nextHabit);
+
+      if (routineId !== undefined) {
+        if (routineId === null) {
+          const removeRes = await this.removeWithinTx(habitStore, routineStore, nextHabit.id, false);
+          if (!removeRes.ok) {
+            await settleAborted(tx);
+            return removeRes;
+          }
+        } else {
+          const assignRes = await this.assignWithinTx(
+            habitStore,
+            routineStore,
+            nextHabit.id,
+            routineId,
+          );
+          if (!assignRes.ok) {
+            await settleAborted(tx);
+            return assignRes;
+          }
+        }
+      }
+
+      const forced = await this.settleForcedFailure(tx);
+      if (forced) return forced;
+      await tx.done;
       return ok(undefined);
     } catch {
       return writeFailed();
@@ -258,23 +396,41 @@ export class GuestHabitRepository implements HabitRepository {
       const existing = await index.get([checkIn.habitId, checkIn.date]);
 
       let recordToSave = checkIn;
-      if (existing && typeof existing === 'object') {
-        const parsedExisting = habitCheckInSchema.safeParse(existing);
-        const originalCreatedAt = parsedExisting.success ? parsedExisting.data.createdAt : checkIn.createdAt;
-
-        if ('id' in existing && existing.id !== checkIn.id) {
-          await tx.store.delete(existing.id as string);
+      if (existing !== undefined) {
+        const parsedExisting = parseRecord(habitCheckInSchema, existing, (c) => {
+          const d = validateStoredDate(c.date);
+          return d.ok ? validateCheckInPreWrite(c) : d;
+        });
+        if (!parsedExisting.ok) {
+          await settleAborted(tx);
+          return err('corrupt_record', CORRUPT_RECORD_MESSAGE);
         }
 
-        // Preserve original createdAt audit timestamp
         recordToSave = {
           ...checkIn,
-          createdAt: originalCreatedAt,
-          updatedAt: computeUpdatedAt(originalCreatedAt, checkIn.updatedAt),
+          createdAt: parsedExisting.value.createdAt,
+          updatedAt: computeUpdatedAt(parsedExisting.value.createdAt, checkIn.updatedAt),
         };
+
+        if (
+          typeof existing === 'object' &&
+          existing !== null &&
+          'id' in existing &&
+          existing.id !== recordToSave.id
+        ) {
+          await tx.store.delete(existing.id as string);
+        }
+      }
+
+      const finalValidation = validateCheckInPreWrite(recordToSave);
+      if (!finalValidation.ok) {
+        await settleAborted(tx);
+        return err('invalid_data', finalValidation.message);
       }
 
       await tx.store.put(recordToSave);
+      const forced = await this.settleForcedFailure(tx);
+      if (forced) return forced;
       await tx.done;
       return ok(undefined);
     } catch {
@@ -317,12 +473,47 @@ export class GuestHabitRepository implements HabitRepository {
   }
 
   async saveRoutine(routine: Routine): Promise<Result<void>> {
-    const validation = validateRoutinePreWrite(routine);
-    if (!validation.ok) {
-      return err('invalid_data', validation.message);
+    const metadataProbe: Routine = { ...routine, habitIds: [] };
+    const metadataValidation = validateRoutinePreWrite(metadataProbe);
+    if (!metadataValidation.ok) {
+      return err('invalid_data', metadataValidation.message);
     }
     try {
-      await this.db.put('routines', routine);
+      const tx = this.db.transaction('routines', 'readwrite');
+      const existingRaw = await tx.store.get(routine.id);
+      if (existingRaw === undefined) {
+        const created: Routine = {
+          ...routine,
+          habitIds: [],
+        };
+        const createdValidation = validateRoutinePreWrite(created);
+        if (!createdValidation.ok) {
+          await settleAborted(tx);
+          return err('invalid_data', createdValidation.message);
+        }
+        await tx.store.put(created);
+      } else {
+        const parsedExisting = parseRecord(routineSchema, existingRaw, validateRoutinePreWrite);
+        if (!parsedExisting.ok) {
+          await settleAborted(tx);
+          return err('corrupt_record', CORRUPT_RECORD_MESSAGE);
+        }
+        const updated: Routine = {
+          ...parsedExisting.value,
+          name: routine.name.trim(),
+          contextLabel: routine.contextLabel.trim(),
+          updatedAt: computeUpdatedAt(parsedExisting.value.createdAt, routine.updatedAt),
+        };
+        const updatedValidation = validateRoutinePreWrite(updated);
+        if (!updatedValidation.ok) {
+          await settleAborted(tx);
+          return err('invalid_data', updatedValidation.message);
+        }
+        await tx.store.put(updated);
+      }
+      const forced = await this.settleForcedFailure(tx);
+      if (forced) return forced;
+      await tx.done;
       return ok(undefined);
     } catch {
       return writeFailed();
@@ -348,47 +539,18 @@ export class GuestHabitRepository implements HabitRepository {
       const tx = this.db.transaction(['habits', 'routines'], 'readwrite');
       const habitStore = tx.objectStore('habits');
       const routineStore = tx.objectStore('routines');
-
-      const habit = await habitStore.get(trimmedHabitId);
-      if (!habit) {
-        return err('habit_not_found', `Habit "${trimmedHabitId}" does not exist.`);
+      const assignRes = await this.assignWithinTx(
+        habitStore,
+        routineStore,
+        trimmedHabitId,
+        trimmedRoutineId,
+      );
+      if (!assignRes.ok) {
+        await settleAborted(tx);
+        return assignRes;
       }
-
-      const targetRoutineRaw = await routineStore.get(trimmedRoutineId);
-      if (!targetRoutineRaw) {
-        return err('routine_not_found', `Routine "${trimmedRoutineId}" does not exist.`);
-      }
-
-      const parsedTarget = routineSchema.safeParse(targetRoutineRaw);
-      if (!parsedTarget.success) {
-        return err('corrupt_record', CORRUPT_RECORD_MESSAGE);
-      }
-      const targetRoutine = parsedTarget.data;
-
-      // Remove habit from all other routines atomically
-      const allRoutinesRaw = await routineStore.getAll();
-      for (const raw of allRoutinesRaw) {
-        const p = routineSchema.safeParse(raw);
-        if (p.success && p.data.id !== trimmedRoutineId && p.data.habitIds.includes(trimmedHabitId)) {
-          const updatedOther: Routine = {
-            ...p.data,
-            habitIds: p.data.habitIds.filter((id) => id !== trimmedHabitId),
-            updatedAt: computeUpdatedAt(p.data.createdAt),
-          };
-          await routineStore.put(updatedOther);
-        }
-      }
-
-      // Add habit to target routine if not already in habitIds
-      if (!targetRoutine.habitIds.includes(trimmedHabitId)) {
-        const updatedTarget: Routine = {
-          ...targetRoutine,
-          habitIds: [...targetRoutine.habitIds, trimmedHabitId],
-          updatedAt: computeUpdatedAt(targetRoutine.createdAt),
-        };
-        await routineStore.put(updatedTarget);
-      }
-
+      const forced = await this.settleForcedFailure(tx);
+      if (forced) return forced;
       await tx.done;
       return ok(undefined);
     } catch {
@@ -401,22 +563,16 @@ export class GuestHabitRepository implements HabitRepository {
     if (!trimmedHabitId) return err('invalid_habit_id', 'Habit ID cannot be empty.');
 
     try {
-      const tx = this.db.transaction(['routines'], 'readwrite');
+      const tx = this.db.transaction(['habits', 'routines'], 'readwrite');
+      const habitStore = tx.objectStore('habits');
       const routineStore = tx.objectStore('routines');
-      const allRoutinesRaw = await routineStore.getAll();
-
-      for (const raw of allRoutinesRaw) {
-        const p = routineSchema.safeParse(raw);
-        if (p.success && p.data.habitIds.includes(trimmedHabitId)) {
-          const updated: Routine = {
-            ...p.data,
-            habitIds: p.data.habitIds.filter((id) => id !== trimmedHabitId),
-            updatedAt: computeUpdatedAt(p.data.createdAt),
-          };
-          await routineStore.put(updated);
-        }
+      const removeRes = await this.removeWithinTx(habitStore, routineStore, trimmedHabitId, true);
+      if (!removeRes.ok) {
+        await settleAborted(tx);
+        return removeRes;
       }
-
+      const forced = await this.settleForcedFailure(tx);
+      if (forced) return forced;
       await tx.done;
       return ok(undefined);
     } catch {
@@ -429,45 +585,168 @@ export class GuestHabitRepository implements HabitRepository {
     if (!trimmedRoutineId) return err('invalid_routine_id', 'Routine ID cannot be empty.');
 
     try {
-      const tx = this.db.transaction(['routines'], 'readwrite');
+      const tx = this.db.transaction(['habits', 'routines'], 'readwrite');
+      const habitStore = tx.objectStore('habits');
       const routineStore = tx.objectStore('routines');
       const raw = await routineStore.get(trimmedRoutineId);
       if (!raw) {
+        await settleAborted(tx);
         return err('routine_not_found', `Routine "${trimmedRoutineId}" does not exist.`);
       }
 
-      const p = routineSchema.safeParse(raw);
-      if (!p.success) {
+      const parsedRoutine = parseRecord(routineSchema, raw, validateRoutinePreWrite);
+      if (!parsedRoutine.ok) {
+        await settleAborted(tx);
         return err('corrupt_record', CORRUPT_RECORD_MESSAGE);
       }
 
-      const deduplicated: string[] = [];
+      const nextIds: string[] = [];
       const seen = new Set<string>();
       for (const hId of habitIds) {
         const trimmed = hId.trim();
-        if (trimmed && !seen.has(trimmed)) {
-          seen.add(trimmed);
-          deduplicated.push(trimmed);
+        if (!trimmed) {
+          await settleAborted(tx);
+          return err('invalid_habit_id', 'Reorder habit IDs must be non-empty strings.');
+        }
+        if (seen.has(trimmed)) {
+          await settleAborted(tx);
+          return err('duplicate_habit_ids', 'Reorder cannot contain duplicate habit IDs.');
+        }
+        seen.add(trimmed);
+        nextIds.push(trimmed);
+      }
+
+      const currentSet = new Set(parsedRoutine.value.habitIds);
+      if (currentSet.size !== nextIds.length || nextIds.some((id) => !currentSet.has(id))) {
+        await settleAborted(tx);
+        return err(
+          'invalid_reorder',
+          'Reorder must preserve the current membership set; it only changes order.',
+        );
+      }
+
+      for (const hid of nextIds) {
+        const habitRaw = await habitStore.get(hid);
+        if (habitRaw === undefined) {
+          await settleAborted(tx);
+          return err('habit_not_found', `Habit "${hid}" does not exist.`);
+        }
+        const parsedHabit = parseRecord(habitSchema, habitRaw, validateHabitPreWrite);
+        if (!parsedHabit.ok) {
+          await settleAborted(tx);
+          return err('corrupt_record', CORRUPT_RECORD_MESSAGE);
         }
       }
 
       const updated: Routine = {
-        ...p.data,
-        habitIds: deduplicated,
-        updatedAt: computeUpdatedAt(p.data.createdAt),
+        ...parsedRoutine.value,
+        habitIds: nextIds,
+        updatedAt: computeUpdatedAt(parsedRoutine.value.createdAt),
       };
-
       const validation = validateRoutinePreWrite(updated);
       if (!validation.ok) {
+        await settleAborted(tx);
         return err('invalid_data', validation.message);
       }
 
       await routineStore.put(updated);
+      const forced = await this.settleForcedFailure(tx);
+      if (forced) return forced;
       await tx.done;
       return ok(undefined);
     } catch {
       return writeFailed();
     }
+  }
+
+  private async assignWithinTx(
+    habitStore: HabitStore,
+    routineStore: RoutineStore,
+    habitId: string,
+    routineId: string,
+  ): Promise<Result<void>> {
+    const habitRaw = await habitStore.get(habitId);
+    if (habitRaw === undefined) {
+      return err('habit_not_found', `Habit "${habitId}" does not exist.`);
+    }
+    const parsedHabit = parseRecord(habitSchema, habitRaw, validateHabitPreWrite);
+    if (!parsedHabit.ok) {
+      return err('corrupt_record', CORRUPT_RECORD_MESSAGE);
+    }
+
+    const allRoutinesRaw = await routineStore.getAll();
+    const routines: Routine[] = [];
+    for (const raw of allRoutinesRaw) {
+      const parsed = parseRecord(routineSchema, raw, validateRoutinePreWrite);
+      if (!parsed.ok) {
+        return err('corrupt_record', CORRUPT_RECORD_MESSAGE);
+      }
+      routines.push(parsed.value);
+    }
+
+    const targetRoutine = routines.find((r) => r.id === routineId);
+    if (!targetRoutine) {
+      return err('routine_not_found', `Routine "${routineId}" does not exist.`);
+    }
+
+    for (const routine of routines) {
+      if (routine.id !== routineId && routine.habitIds.includes(habitId)) {
+        const updatedOther: Routine = {
+          ...routine,
+          habitIds: routine.habitIds.filter((id) => id !== habitId),
+          updatedAt: computeUpdatedAt(routine.createdAt),
+        };
+        await routineStore.put(updatedOther);
+      }
+    }
+
+    if (!targetRoutine.habitIds.includes(habitId)) {
+      const updatedTarget: Routine = {
+        ...targetRoutine,
+        habitIds: [...targetRoutine.habitIds, habitId],
+        updatedAt: computeUpdatedAt(targetRoutine.createdAt),
+      };
+      await routineStore.put(updatedTarget);
+    }
+
+    return ok(undefined);
+  }
+
+  private async removeWithinTx(
+    habitStore: HabitStore,
+    routineStore: RoutineStore,
+    habitId: string,
+    requireHabitExists: boolean,
+  ): Promise<Result<void>> {
+    const habitRaw = await habitStore.get(habitId);
+    if (habitRaw === undefined) {
+      if (requireHabitExists) {
+        return err('habit_not_found', `Habit "${habitId}" does not exist.`);
+      }
+    } else {
+      const parsedHabit = parseRecord(habitSchema, habitRaw, validateHabitPreWrite);
+      if (!parsedHabit.ok) {
+        return err('corrupt_record', CORRUPT_RECORD_MESSAGE);
+      }
+    }
+
+    const allRoutinesRaw = await routineStore.getAll();
+    for (const raw of allRoutinesRaw) {
+      const parsed = parseRecord(routineSchema, raw, validateRoutinePreWrite);
+      if (!parsed.ok) {
+        return err('corrupt_record', CORRUPT_RECORD_MESSAGE);
+      }
+      if (parsed.value.habitIds.includes(habitId)) {
+        const updated: Routine = {
+          ...parsed.value,
+          habitIds: parsed.value.habitIds.filter((id) => id !== habitId),
+          updatedAt: computeUpdatedAt(parsed.value.createdAt),
+        };
+        await routineStore.put(updated);
+      }
+    }
+
+    return ok(undefined);
   }
 }
 

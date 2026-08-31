@@ -81,6 +81,14 @@ describe('guest-habit-repository', () => {
       ...habitSample,
       id: 'h_archived',
       status: 'archived',
+      createdAt: '2026-08-01T08:00:00.000Z',
+      updatedAt: '2026-08-20T08:00:00.000Z',
+      scheduleRevisions: [
+        {
+          effectiveFromDate: '2026-08-01',
+          schedule: { kind: 'weekdays', weekdays: [1, 3, 5] },
+        },
+      ],
       activeIntervals: [{ startDate: '2026-08-01', endDate: '2026-08-20' }],
     };
 
@@ -432,9 +440,292 @@ describe('guest-habit-repository', () => {
     // Assert new v3 stores function properly
     expect(await habitRepo.saveHabit(habitSample)).toEqual({ ok: true, value: undefined });
     expect(await habitRepo.getHabit('h_math')).toEqual({ ok: true, value: habitSample });
-    expect(await habitRepo.saveRoutine(routineSample)).toEqual({ ok: true, value: undefined });
-    expect(await habitRepo.getRoutine('r_study')).toEqual({ ok: true, value: routineSample });
+    const emptyRoutine = { ...routineSample, habitIds: [] };
+    expect(await habitRepo.saveRoutine(emptyRoutine)).toEqual({ ok: true, value: undefined });
+    expect(await habitRepo.assignHabitToRoutine('h_math', 'r_study')).toEqual({
+      ok: true,
+      value: undefined,
+    });
+    const storedRoutine = await habitRepo.getRoutine('r_study');
+    expect(storedRoutine.ok).toBe(true);
+    if (storedRoutine.ok) {
+      expect(storedRoutine.value?.habitIds).toEqual(['h_math']);
+      expect(storedRoutine.value?.name).toBe('Study Session Reset');
+    }
     expect(await habitRepo.saveCheckIn(checkInSample)).toEqual({ ok: true, value: undefined });
-    expect(await habitRepo.getCheckIn('h_math', '2026-08-31')).toEqual({ ok: true, value: checkInSample });
+    expect(await habitRepo.getCheckIn('h_math', '2026-08-31')).toEqual({
+      ok: true,
+      value: checkInSample,
+    });
+  });
+
+  it('refuses to overwrite a structurally invalid same-day check-in and leaves raw bytes untouched', async () => {
+    const name = dbName();
+    const repo = await createGuestHabitRepository({ databaseName: name });
+    await repo.saveHabit(habitSample);
+
+    const rawCorrupt = {
+      id: 'chk_h_math_2026-08-31',
+      habitId: 'h_math',
+      date: '2026-08-31',
+      kind: 999,
+      note: 'structurally invalid',
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    const rawDb = await openDB(name, GUEST_DB_VERSION);
+    await rawDb.put('habitCheckIns', rawCorrupt);
+    rawDb.close();
+
+    const replacement: HabitCheckIn = {
+      ...checkInSample,
+      kind: 'full',
+      note: 'attempted overwrite',
+      updatedAt: '2026-08-31T10:00:00.000Z',
+    };
+    const saveRes = await repo.saveCheckIn(replacement);
+    expect(saveRes.ok).toBe(false);
+    if (!saveRes.ok) expect(saveRes.code).toBe('corrupt_record');
+
+    const verifyRaw = await openDB(name, GUEST_DB_VERSION);
+    expect(await verifyRaw.get('habitCheckIns', 'chk_h_math_2026-08-31')).toEqual(rawCorrupt);
+    verifyRaw.close();
+  });
+
+  it('refuses to overwrite a semantically invalid same-day check-in and leaves raw bytes untouched', async () => {
+    const name = dbName();
+    const repo = await createGuestHabitRepository({ databaseName: name });
+    await repo.saveHabit(habitSample);
+
+    const invertedTimestamps: HabitCheckIn = {
+      ...checkInSample,
+      createdAt: '2026-08-31T10:00:00.000Z',
+      updatedAt: '2026-08-31T08:00:00.000Z',
+    };
+    const rawDb = await openDB(name, GUEST_DB_VERSION);
+    await rawDb.put('habitCheckIns', invertedTimestamps);
+    rawDb.close();
+
+    const saveRes = await repo.saveCheckIn({
+      ...checkInSample,
+      kind: 'full',
+      createdAt: '2026-08-31T12:00:00.000Z',
+      updatedAt: '2026-08-31T12:00:00.000Z',
+    });
+    expect(saveRes.ok).toBe(false);
+    if (!saveRes.ok) expect(saveRes.code).toBe('corrupt_record');
+
+    const verifyRaw = await openDB(name, GUEST_DB_VERSION);
+    expect(await verifyRaw.get('habitCheckIns', checkInSample.id)).toEqual(invertedTimestamps);
+    verifyRaw.close();
+  });
+
+  it('atomically rolls back createHabitWithRoutine when the write is forced to fail', async () => {
+    const name = dbName();
+    const repo = await createGuestHabitRepository({ databaseName: name });
+    const routine: Routine = { ...routineSample, habitIds: [] };
+    await repo.saveRoutine(routine);
+
+    repo.failNextWrite = true;
+    const createRes = await repo.createHabitWithRoutine(habitSample, 'r_study');
+    expect(createRes.ok).toBe(false);
+    if (!createRes.ok) expect(createRes.code).toBe('persistence_write_failed');
+
+    expect(await repo.getHabit('h_math')).toEqual({ ok: true, value: null });
+    const unchanged = await repo.getRoutine('r_study');
+    expect(unchanged.ok && unchanged.value?.habitIds).toEqual([]);
+
+    const retry = await repo.createHabitWithRoutine(habitSample, 'r_study');
+    expect(retry.ok).toBe(true);
+    const habits = await repo.listHabits(true);
+    expect(habits.ok && habits.value).toHaveLength(1);
+    const assigned = await repo.getRoutine('r_study');
+    expect(assigned.ok && assigned.value?.habitIds).toEqual(['h_math']);
+  });
+
+  it('atomically rolls back updateHabitWithRoutine move A → B on forced failure', async () => {
+    const name = dbName();
+    const repo = await createGuestHabitRepository({ databaseName: name });
+    const original: Habit = { ...habitSample, title: 'Original Title' };
+    await repo.saveHabit(original);
+    await repo.saveRoutine({
+      id: 'r_a',
+      name: 'Routine A',
+      contextLabel: 'A',
+      habitIds: [],
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+    await repo.saveRoutine({
+      id: 'r_b',
+      name: 'Routine B',
+      contextLabel: 'B',
+      habitIds: [],
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+    expect((await repo.assignHabitToRoutine('h_math', 'r_a')).ok).toBe(true);
+
+    const nextHabit: Habit = {
+      ...original,
+      title: 'Edited Title',
+      updatedAt: '2026-08-31T10:00:00.000Z',
+    };
+    repo.failNextWrite = true;
+    const updateRes = await repo.updateHabitWithRoutine(original, nextHabit, 'r_b');
+    expect(updateRes.ok).toBe(false);
+    if (!updateRes.ok) expect(updateRes.code).toBe('persistence_write_failed');
+
+    const storedHabit = await repo.getHabit('h_math');
+    expect(storedHabit.ok && storedHabit.value?.title).toBe('Original Title');
+    const a = await repo.getRoutine('r_a');
+    const b = await repo.getRoutine('r_b');
+    expect(a.ok && a.value?.habitIds).toEqual(['h_math']);
+    expect(b.ok && b.value?.habitIds).toEqual([]);
+  });
+
+  it('rejects unknown habit on remove and reorder', async () => {
+    const name = dbName();
+    const repo = await createGuestHabitRepository({ databaseName: name });
+    await repo.saveHabit(habitSample);
+    await repo.saveRoutine({ ...routineSample, habitIds: [] });
+    await repo.assignHabitToRoutine('h_math', 'r_study');
+
+    const removeUnknown = await repo.removeHabitFromRoutine('missing_habit');
+    expect(removeUnknown.ok).toBe(false);
+    if (!removeUnknown.ok) expect(removeUnknown.code).toBe('habit_not_found');
+
+    const reorderUnknown = await repo.reorderRoutineHabits('r_study', ['missing_habit']);
+    expect(reorderUnknown.ok).toBe(false);
+    if (!reorderUnknown.ok) expect(reorderUnknown.code).toBe('invalid_reorder');
+
+    const rawDb = await openDB(name, GUEST_DB_VERSION);
+    await rawDb.delete('habits', 'h_math');
+    rawDb.close();
+    const reorderDeleted = await repo.reorderRoutineHabits('r_study', ['h_math']);
+    expect(reorderDeleted.ok).toBe(false);
+    if (!reorderDeleted.ok) expect(reorderDeleted.code).toBe('habit_not_found');
+  });
+
+  it('rejects duplicate IDs and unknown extra IDs on reorder', async () => {
+    const name = dbName();
+    const repo = await createGuestHabitRepository({ databaseName: name });
+    const h2: Habit = { ...habitSample, id: 'h2', title: 'Second' };
+    await repo.saveHabit(habitSample);
+    await repo.saveHabit(h2);
+    await repo.saveRoutine({ ...routineSample, habitIds: [] });
+    await repo.assignHabitToRoutine('h_math', 'r_study');
+    await repo.assignHabitToRoutine('h2', 'r_study');
+
+    const dup = await repo.reorderRoutineHabits('r_study', ['h_math', 'h_math']);
+    expect(dup.ok).toBe(false);
+    if (!dup.ok) expect(dup.code).toBe('duplicate_habit_ids');
+
+    const extra = await repo.reorderRoutineHabits('r_study', ['h_math', 'h2', 'ghost']);
+    expect(extra.ok).toBe(false);
+    if (!extra.ok) expect(extra.code).toBe('invalid_reorder');
+
+    const stored = await repo.getRoutine('r_study');
+    expect(stored.ok && stored.value?.habitIds).toEqual(['h_math', 'h2']);
+  });
+
+  it('aborts assign when the target or a sibling routine is corrupt', async () => {
+    const name = dbName();
+    const repo = await createGuestHabitRepository({ databaseName: name });
+    await repo.saveHabit(habitSample);
+    await repo.saveRoutine({
+      id: 'r_ok',
+      name: 'OK',
+      contextLabel: '',
+      habitIds: [],
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+
+    const rawDb = await openDB(name, GUEST_DB_VERSION);
+    await rawDb.put('routines', { id: 'r_corrupt', name: 12345 });
+    rawDb.close();
+
+    const assignCorruptSibling = await repo.assignHabitToRoutine('h_math', 'r_ok');
+    expect(assignCorruptSibling.ok).toBe(false);
+    if (!assignCorruptSibling.ok) expect(assignCorruptSibling.code).toBe('corrupt_record');
+    const okRoutine = await repo.getRoutine('r_ok');
+    expect(okRoutine.ok && okRoutine.value?.habitIds).toEqual([]);
+
+    const rawTarget = await openDB(name, GUEST_DB_VERSION);
+    await rawTarget.put('routines', { id: 'r_target_corrupt', name: 99, habitIds: [] });
+    rawTarget.close();
+    const assignCorruptTarget = await repo.assignHabitToRoutine('h_math', 'r_target_corrupt');
+    expect(assignCorruptTarget.ok).toBe(false);
+    if (!assignCorruptTarget.ok) expect(assignCorruptTarget.code).toBe('corrupt_record');
+  });
+
+  it('never leaves one habit in two routines under conflicting concurrent assignments', async () => {
+    const name = dbName();
+    const repo1 = await createGuestHabitRepository({ databaseName: name });
+    const repo2 = await createGuestHabitRepository({ databaseName: name });
+    await repo1.saveHabit(habitSample);
+    await repo1.saveRoutine({
+      id: 'r_morning',
+      name: 'Morning',
+      contextLabel: '',
+      habitIds: [],
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+    await repo1.saveRoutine({
+      id: 'r_evening',
+      name: 'Evening',
+      contextLabel: '',
+      habitIds: [],
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+
+    await Promise.all([
+      repo1.assignHabitToRoutine('h_math', 'r_morning'),
+      repo2.assignHabitToRoutine('h_math', 'r_evening'),
+    ]);
+
+    const morning = await repo1.getRoutine('r_morning');
+    const evening = await repo1.getRoutine('r_evening');
+    const inMorning = morning.ok && morning.value?.habitIds.includes('h_math') ? 1 : 0;
+    const inEvening = evening.ok && evening.value?.habitIds.includes('h_math') ? 1 : 0;
+    expect(inMorning + inEvening).toBe(1);
+  });
+
+  it('leaves a semantically impossible persisted habit untouched as corrupt_record', async () => {
+    const name = dbName();
+    const repo = await createGuestHabitRepository({ databaseName: name });
+    const impossible: Habit = {
+      ...habitSample,
+      id: 'h_impossible',
+      status: 'active',
+      activeIntervals: [
+        { startDate: '2026-08-31', endDate: '2026-09-10' },
+        { startDate: '2026-09-01', endDate: null },
+      ],
+    };
+    const rawDb = await openDB(name, GUEST_DB_VERSION);
+    await rawDb.put('habits', impossible);
+    rawDb.close();
+
+    const listRes = await repo.listHabits(true);
+    expect(listRes.ok).toBe(false);
+    if (!listRes.ok) expect(listRes.code).toBe('corrupt_record');
+
+    const verifyRaw = await openDB(name, GUEST_DB_VERSION);
+    expect(await verifyRaw.get('habits', 'h_impossible')).toEqual(impossible);
+    verifyRaw.close();
+  });
+
+  it('does not persist incoming habitIds through generic saveRoutine', async () => {
+    const name = dbName();
+    const repo = await createGuestHabitRepository({ databaseName: name });
+    await repo.saveHabit(habitSample);
+    const saveRes = await repo.saveRoutine(routineSample);
+    expect(saveRes.ok).toBe(true);
+    const stored = await repo.getRoutine('r_study');
+    expect(stored.ok && stored.value?.habitIds).toEqual([]);
   });
 });

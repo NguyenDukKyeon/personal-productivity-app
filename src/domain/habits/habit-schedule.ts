@@ -14,6 +14,29 @@ export interface WeekdaySchedule {
 
 export type HabitSchedule = DailySchedule | WeekdaySchedule;
 
+export function validateHabitSchedule(schedule: HabitSchedule): Result<void> {
+  if (!schedule || (schedule.kind !== 'daily' && schedule.kind !== 'weekdays')) {
+    return err('invalid_schedule', 'Schedule must be daily or weekdays.');
+  }
+
+  if (schedule.kind === 'weekdays') {
+    if (!Array.isArray(schedule.weekdays) || schedule.weekdays.length === 0) {
+      return err('empty_weekdays', 'Weekday schedule must contain at least one day.');
+    }
+    const uniqueDays = new Set(schedule.weekdays);
+    if (uniqueDays.size !== schedule.weekdays.length) {
+      return err('duplicate_weekdays', 'Weekday schedule cannot contain duplicates.');
+    }
+    for (const d of schedule.weekdays) {
+      if (!Number.isInteger(d) || d < 1 || d > 7) {
+        return err('invalid_weekday_number', 'Weekday number must be an integer between 1 and 7.');
+      }
+    }
+  }
+
+  return ok(undefined);
+}
+
 export function createDailySchedule(): Result<DailySchedule> {
   return ok({ kind: 'daily' });
 }

@@ -5,7 +5,7 @@ import { Calendar, Check, History, Sparkles, X } from 'lucide-react';
 import type { Habit } from '@/domain/habits/habit';
 import type { HabitCheckIn } from '@/domain/habits/habit-check-in';
 import { calculateHabitMetrics } from '@/domain/habits/habit-metrics';
-import { toLocalDateKey } from '@/domain/shared/local-date';
+import { shiftLocalDateKey, toLocalDateKey } from '@/domain/shared/local-date';
 import type { Result } from '@/domain/shared/result';
 import { Button } from '@/components/ui/Button';
 
@@ -16,12 +16,12 @@ interface HabitHistoryModalProps {
   onGetHistory: (habitId: string) => Promise<Result<HabitCheckIn[]>>;
 }
 
-function getPastDateKeys(days: number): string[] {
+function getPastDateKeys(days: number, asOf: Date = new Date()): string[] {
+  const today = toLocalDateKey(asOf);
   const dates: string[] = [];
-  const now = new Date();
   for (let i = days - 1; i >= 0; i--) {
-    const d = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
-    dates.push(toLocalDateKey(d));
+    const key = shiftLocalDateKey(today, -i);
+    if (key) dates.push(key);
   }
   return dates;
 }
@@ -49,10 +49,12 @@ export function HabitHistoryModal({
   if (!isOpen || !habit) return null;
 
   const past14Days = getPastDateKeys(14);
+  const asOfDateKey = past14Days[past14Days.length - 1] ?? toLocalDateKey(new Date());
   const metrics = calculateHabitMetrics({
     habit,
     dateKeys: past14Days,
     checkIns: history,
+    asOfDateKey,
   });
 
   return (

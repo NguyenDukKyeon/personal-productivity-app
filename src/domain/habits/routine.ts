@@ -20,7 +20,6 @@ export interface CreateRoutineDomainInput {
 export interface UpdateRoutineDomainPatch {
   name?: string;
   contextLabel?: string;
-  habitIds?: string[];
 }
 
 const MAX_NAME_LENGTH = 60;
@@ -146,18 +145,12 @@ export function updateRoutine(
       `Context label cannot exceed ${MAX_CONTEXT_LABEL_LENGTH} characters.`,
     );
 
-  const habitIds =
-    patch.habitIds !== undefined
-      ? deduplicateHabitIds(patch.habitIds)
-      : routine.habitIds;
-
   const now = nowIso ?? new Date().toISOString();
 
   const updated: Routine = {
     ...routine,
     name,
     contextLabel,
-    habitIds,
     updatedAt: now,
   };
 
@@ -207,12 +200,36 @@ export function reorderRoutineHabits(
   routine: Routine,
   orderedHabitIds: string[],
   nowIso?: string,
-): Routine {
-  const habitIds = deduplicateHabitIds(orderedHabitIds);
+): Result<Routine> {
+  const seen = new Set<string>();
+  const nextIds: string[] = [];
+  for (const raw of orderedHabitIds) {
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      return err('invalid_habit_id', 'Reorder habit IDs must be non-empty strings.');
+    }
+    if (seen.has(trimmed)) {
+      return err('duplicate_habit_ids', 'Reorder cannot contain duplicate habit IDs.');
+    }
+    seen.add(trimmed);
+    nextIds.push(trimmed);
+  }
+
+  const currentSet = new Set(routine.habitIds);
+  if (currentSet.size !== nextIds.length || nextIds.some((id) => !currentSet.has(id))) {
+    return err(
+      'invalid_reorder',
+      'Reorder must preserve the current membership set; it only changes order.',
+    );
+  }
+
   const now = nowIso ?? new Date().toISOString();
-  return {
+  const updated: Routine = {
     ...routine,
-    habitIds,
+    habitIds: nextIds,
     updatedAt: now,
   };
+  const validation = validateRoutinePreWrite(updated);
+  if (!validation.ok) return validation;
+  return ok(updated);
 }

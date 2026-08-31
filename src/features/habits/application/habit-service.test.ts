@@ -26,6 +26,25 @@ class InMemoryHabitRepository implements HabitRepository {
     return ok(undefined);
   }
 
+  async createHabitWithRoutine(habit: Habit, routineId: string | null): Promise<Result<void>> {
+    this.habits.set(habit.id, habit);
+    if (routineId) {
+      return this.assignHabitToRoutine(habit.id, routineId);
+    }
+    return ok(undefined);
+  }
+
+  async updateHabitWithRoutine(
+    _previousHabit: Habit,
+    nextHabit: Habit,
+    routineId?: string | null,
+  ): Promise<Result<void>> {
+    this.habits.set(nextHabit.id, nextHabit);
+    if (routineId === undefined) return ok(undefined);
+    if (routineId === null) return this.removeHabitFromRoutine(nextHabit.id);
+    return this.assignHabitToRoutine(nextHabit.id, routineId);
+  }
+
   async getCheckIn(habitId: string, dateKey: string): Promise<Result<HabitCheckIn | null>> {
     return ok(this.checkIns.get(`${habitId}#${dateKey}`) ?? null);
   }
@@ -269,8 +288,10 @@ describe('HabitService application service', () => {
       expect(unscheduledCheck.code).toBe('habit_not_scheduled');
     }
 
-    // Archived habit rejected
+    // Archived habit rejected after archive takes effect next local day
+    fixedNow = new Date('2026-08-30T07:00:00.000Z');
     await service.archiveHabit(habit.id);
+    fixedNow = new Date('2026-08-31T07:00:00.000Z');
     const archivedCheck = await service.recordCheckIn({
       habitId: habit.id,
       date: '2026-08-31',

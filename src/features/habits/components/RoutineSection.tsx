@@ -17,6 +17,7 @@ interface RoutineSectionProps {
   onArchiveHabit: (habitId: string) => void;
   onViewHistory: (habit: Habit) => void;
   onDeleteRoutine: (routineId: string) => void;
+  onMoveHabit: (habitId: string, direction: 'up' | 'down') => void;
 }
 
 export function RoutineSection({
@@ -28,6 +29,7 @@ export function RoutineSection({
   onArchiveHabit,
   onViewHistory,
   onDeleteRoutine,
+  onMoveHabit,
 }: RoutineSectionProps) {
   const [collapsed, setCollapsed] = useState(false);
 
@@ -81,16 +83,39 @@ export function RoutineSection({
               No habits in this routine yet. Edit a habit to assign it here.
             </p>
           ) : (
-            items.map((item) => (
-              <HabitTodayCard
-                key={item.habit.id}
-                item={item}
-                onCheckIn={onCheckIn}
-                onClearCheckIn={onClearCheckIn}
-                onEdit={onEditHabit}
-                onArchive={onArchiveHabit}
-                onViewHistory={onViewHistory}
-              />
+            items.map((item, index) => (
+              <div key={item.habit.id} className="flex items-start gap-2">
+                <div className="flex flex-col pt-3">
+                  <button
+                    type="button"
+                    className="rounded-md p-1 text-slate-400 hover:bg-slate-200/70 hover:text-slate-700 disabled:opacity-30 dark:hover:bg-[#1e2538] dark:hover:text-slate-200"
+                    onClick={() => onMoveHabit(item.habit.id, 'up')}
+                    disabled={index === 0}
+                    aria-label={`Move ${item.habit.title} up`}
+                  >
+                    <ChevronUp className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-md p-1 text-slate-400 hover:bg-slate-200/70 hover:text-slate-700 disabled:opacity-30 dark:hover:bg-[#1e2538] dark:hover:text-slate-200"
+                    onClick={() => onMoveHabit(item.habit.id, 'down')}
+                    disabled={index === items.length - 1}
+                    aria-label={`Move ${item.habit.title} down`}
+                  >
+                    <ChevronDown className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <HabitTodayCard
+                    item={item}
+                    onCheckIn={onCheckIn}
+                    onClearCheckIn={onClearCheckIn}
+                    onEdit={onEditHabit}
+                    onArchive={onArchiveHabit}
+                    onViewHistory={onViewHistory}
+                  />
+                </div>
+              </div>
             ))
           )}
         </div>

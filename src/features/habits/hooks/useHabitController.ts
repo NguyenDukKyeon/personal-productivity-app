@@ -70,6 +70,8 @@ export function useHabitController(service: HabitService, date: string) {
     updateRoutine: (id: string, patch: UpdateRoutineInput) =>
       runMutation(() => service.updateRoutine(id, patch)),
     deleteRoutine: (id: string) => runMutation(() => service.deleteRoutine(id)),
+    reorderRoutine: (id: string, habitIds: string[]) =>
+      runMutation(() => service.reorderRoutine(id, habitIds)),
     getHabitHistory: (habitId: string) => service.getHabitHistory(habitId),
   };
 }
