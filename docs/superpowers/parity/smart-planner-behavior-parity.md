@@ -10,7 +10,10 @@ This register prevents the rebuild from silently losing useful Smart Planner beh
 | Single-day TimeBlock scheduling | PRESERVED | `src/domain/time-blocks` + Today service; `TimeBlock` is canonical |
 | Multi-day Flexible Planner | NOT YET IMPLEMENTED | Planner |
 | Schedule forecasting | NOT YET IMPLEMENTED | Projects/Planner |
-| Focus timer / preferences / transitions | NOT YET IMPLEMENTED | Focus Station |
+| Focus session timing / state machine / reload reconstruction | PRESERVED | `src/domain/focus` + Focus Station; timestamps reconstruct elapsed time, pause excludes paused wall-clock, at most one active session |
+| Distraction Inbox | SUPERSEDED | First-class `Distraction` records during running/paused sessions; Smart Planner had no equivalent inbox. Capture does not pause the timer. |
+| Execution evidence vs scheduled time | PRESERVED | TimeBlock remains plan; `FocusSession.focusedDurationMs` is reality; `WorkItem.actualMinutes` is derived only from completed sessions |
+| Focus preferences, auto-break, ambient soundscapes, mini/studio timer, notifications | NOT YET IMPLEMENTED | Later Focus chrome; XP/coins/chimes stay out of the product |
 | Habit tracking | NOT YET IMPLEMENTED | Habits & Routines |
 | Projects / roadmaps / lesson placement | NOT YET IMPLEMENTED | Projects/Planner |
 | Progress analytics | NOT YET IMPLEMENTED | Review/Analytics |
