@@ -1,4 +1,4 @@
-﻿import type { Habit } from '@/domain/habits/habit';
+import type { Habit } from '@/domain/habits/habit';
 import type { HabitCheckIn } from '@/domain/habits/habit-check-in';
 import type { Routine } from '@/domain/habits/routine';
 import type { Result } from '@/domain/shared/result';
@@ -7,6 +7,12 @@ export interface HabitRepository {
   getHabit(id: string): Promise<Result<Habit | null>>;
   listHabits(includeArchived?: boolean): Promise<Result<Habit[]>>;
   saveHabit(habit: Habit): Promise<Result<void>>;
+  createHabitWithRoutine(habit: Habit, routineId: string | null): Promise<Result<void>>;
+  updateHabitWithRoutine(
+    previousHabit: Habit,
+    nextHabit: Habit,
+    routineId?: string | null,
+  ): Promise<Result<void>>;
 
   getCheckIn(habitId: string, dateKey: string): Promise<Result<HabitCheckIn | null>>;
   listCheckInsForHabit(habitId: string): Promise<Result<HabitCheckIn[]>>;
