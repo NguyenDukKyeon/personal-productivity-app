@@ -1,4 +1,4 @@
-﻿# Habits & Routines — Consistency + Recovery Design Specification
+# Habits & Routines — Consistency + Recovery Design Specification
 
 **Phase:** Phase 3  
 **Status:** Approved Architecture & Specification (Remediated)  
@@ -166,3 +166,35 @@ export interface Routine {
 1. **Never Silently Omit Corrupt Records**: `GuestHabitRepository` validates records on read. If any row in `habits`, `habitCheckIns`, or `routines` is corrupt or invalid, list operations immediately return `err('corrupt_record', ...)` while leaving the raw stored bytes untouched in IndexedDB.
 2. **Schema Upgrade Safety**: Version 3 migration cleanly adds `habits`, `habitCheckIns`, and `routines` stores without modifying or deleting Phase 1 (`workItems`, `dailyPlans`, `timeBlocks`, `dailyCommitments`) or Phase 2 (`focusSessions`, `distractions`) object stores.
 3. **Atomic Routine Membership**: `Routine.habitIds` is the single canonical source of routine membership and ordering. Moving a habit across routines or reordering habits executes inside an atomic IndexedDB transaction.
+
+### 5.1 Same-Day Archive Truth
+Canonical rule:
+- `HabitLifecycleInterval.endDate` is exclusive.
+- Archiving on local calendar date D takes effect starting on D+1 (`endDate = shiftLocalDate(archiveDate, 1)`).
+- The Habit remains historically active for date D.
+- A scheduled opportunity or valid check-in recorded on D must never disappear because the user archives later that day.
+- Same-day unarchive must reopen the current interval rather than creating overlapping lifecycle intervals.
+
+Example:
+```text
+08:00 — Habit scheduled
+09:00 — Full check-in
+18:00 — Archive Habit
+
+Result:
+Today's scheduled opportunity + Full evidence remain in history.
+Archive becomes effective tomorrow.
+```
+
+### 5.2 Today is Pending, Not Missed
+Canonical rule:
+```text
+past scheduled date + no check-in
+= missed
+
+current local date + no check-in
+= pending
+```
+- The current local date must NOT reduce historical consistency before the day has been evaluated.
+- Current pending dates are excluded from the evaluated consistency denominator.
+- When a Full / Minimum / Skip is recorded for today, today's evidence enters the relevant metrics according to existing semantics.

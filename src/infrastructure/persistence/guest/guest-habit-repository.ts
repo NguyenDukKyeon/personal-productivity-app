@@ -1,4 +1,4 @@
-import type { IDBPDatabase } from 'idb';
+import type { IDBPDatabase, IDBPTransaction } from 'idb';
 import { z } from 'zod';
 import {
   validateHabitPreWrite,
@@ -260,8 +260,9 @@ export class GuestHabitRepository implements HabitRepository {
       return err('invalid_data', validation.message);
     }
 
+    let tx: IDBPTransaction<GuestTodayDB, ['habits', 'routines'], 'readwrite'> | null = null;
     try {
-      const tx = this.db.transaction(['habits', 'routines'], 'readwrite');
+      tx = this.db.transaction(['habits', 'routines'], 'readwrite');
       const habitStore = tx.objectStore('habits');
       const routineStore = tx.objectStore('routines');
 
@@ -314,6 +315,9 @@ export class GuestHabitRepository implements HabitRepository {
       await tx.done;
       return ok(undefined);
     } catch {
+      if (tx) {
+        await abortTx(tx);
+      }
       return writeFailed();
     }
   }
@@ -328,8 +332,9 @@ export class GuestHabitRepository implements HabitRepository {
       return err('invalid_data', validation.message);
     }
 
+    let tx: IDBPTransaction<GuestTodayDB, ['habits', 'routines'], 'readwrite'> | null = null;
     try {
-      const tx = this.db.transaction(['habits', 'routines'], 'readwrite');
+      tx = this.db.transaction(['habits', 'routines'], 'readwrite');
       const habitStore = tx.objectStore('habits');
       const routineStore = tx.objectStore('routines');
 
@@ -390,6 +395,9 @@ export class GuestHabitRepository implements HabitRepository {
       await tx.done;
       return ok(undefined);
     } catch {
+      if (tx) {
+        await abortTx(tx);
+      }
       return writeFailed();
     }
   }
@@ -399,8 +407,9 @@ export class GuestHabitRepository implements HabitRepository {
     if (!validation.ok) {
       return err('invalid_data', validation.message);
     }
+    let tx: IDBPTransaction<GuestTodayDB, ['habitCheckIns'], 'readwrite'> | null = null;
     try {
-      const tx = this.db.transaction('habitCheckIns', 'readwrite');
+      tx = this.db.transaction('habitCheckIns', 'readwrite');
       const index = tx.store.index('habitId_date');
       const existing = await index.get([checkIn.habitId, checkIn.date]);
 
@@ -440,13 +449,17 @@ export class GuestHabitRepository implements HabitRepository {
       await tx.done;
       return ok(undefined);
     } catch {
+      if (tx) {
+        await abortTx(tx);
+      }
       return writeFailed();
     }
   }
 
   async deleteCheckIn(habitId: string, dateKey: string): Promise<Result<void>> {
+    let tx: IDBPTransaction<GuestTodayDB, ['habitCheckIns'], 'readwrite'> | null = null;
     try {
-      const tx = this.db.transaction('habitCheckIns', 'readwrite');
+      tx = this.db.transaction('habitCheckIns', 'readwrite');
       const index = tx.store.index('habitId_date');
       const existing = await index.get([habitId, dateKey]);
       if (existing && typeof existing === 'object' && 'id' in existing) {
@@ -455,6 +468,9 @@ export class GuestHabitRepository implements HabitRepository {
       await tx.done;
       return ok(undefined);
     } catch {
+      if (tx) {
+        await abortTx(tx);
+      }
       return writeFailed();
     }
   }
@@ -506,8 +522,9 @@ export class GuestHabitRepository implements HabitRepository {
     if (!trimmedHabitId) return err('invalid_habit_id', 'Habit ID cannot be empty.');
     if (!trimmedRoutineId) return err('invalid_routine_id', 'Routine ID cannot be empty.');
 
+    let tx: IDBPTransaction<GuestTodayDB, ['habits', 'routines'], 'readwrite'> | null = null;
     try {
-      const tx = this.db.transaction(['habits', 'routines'], 'readwrite');
+      tx = this.db.transaction(['habits', 'routines'], 'readwrite');
       const habitStore = tx.objectStore('habits');
       const routineStore = tx.objectStore('routines');
 
@@ -564,6 +581,9 @@ export class GuestHabitRepository implements HabitRepository {
       await tx.done;
       return ok(undefined);
     } catch {
+      if (tx) {
+        await abortTx(tx);
+      }
       return writeFailed();
     }
   }
@@ -572,8 +592,9 @@ export class GuestHabitRepository implements HabitRepository {
     const trimmedHabitId = habitId.trim();
     if (!trimmedHabitId) return err('invalid_habit_id', 'Habit ID cannot be empty.');
 
+    let tx: IDBPTransaction<GuestTodayDB, ['habits', 'routines'], 'readwrite'> | null = null;
     try {
-      const tx = this.db.transaction(['habits', 'routines'], 'readwrite');
+      tx = this.db.transaction(['habits', 'routines'], 'readwrite');
       const habitStore = tx.objectStore('habits');
       const routineStore = tx.objectStore('routines');
 
@@ -608,6 +629,9 @@ export class GuestHabitRepository implements HabitRepository {
       await tx.done;
       return ok(undefined);
     } catch {
+      if (tx) {
+        await abortTx(tx);
+      }
       return writeFailed();
     }
   }
@@ -625,8 +649,9 @@ export class GuestHabitRepository implements HabitRepository {
       return err('duplicate_habit_ids', 'Reorder list contains duplicate habit IDs.');
     }
 
+    let tx: IDBPTransaction<GuestTodayDB, ['habits', 'routines'], 'readwrite'> | null = null;
     try {
-      const tx = this.db.transaction(['habits', 'routines'], 'readwrite');
+      tx = this.db.transaction(['habits', 'routines'], 'readwrite');
       const habitStore = tx.objectStore('habits');
       const routineStore = tx.objectStore('routines');
 
@@ -685,6 +710,9 @@ export class GuestHabitRepository implements HabitRepository {
       await tx.done;
       return ok(undefined);
     } catch {
+      if (tx) {
+        await abortTx(tx);
+      }
       return writeFailed();
     }
   }

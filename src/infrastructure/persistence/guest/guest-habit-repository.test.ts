@@ -1,4 +1,4 @@
-import { openDB } from 'idb';
+import { openDB, type IDBPDatabase } from 'idb';
 import { describe, expect, it } from 'vitest';
 import type { DailyCommitmentSnapshot } from '@/domain/commitments/commitment';
 import type { DailyPlan, DailyPriority } from '@/domain/daily-plans/daily-plan';
@@ -9,10 +9,60 @@ import type { HabitCheckIn } from '@/domain/habits/habit-check-in';
 import type { Routine } from '@/domain/habits/routine';
 import type { TimeBlock } from '@/domain/time-blocks/time-block';
 import type { WorkItem } from '@/domain/work-items/work-item';
-import { GUEST_DB_VERSION } from './guest-db';
+import { GUEST_DB_VERSION, type GuestTodayDB } from './guest-db';
 import { createGuestFocusRepository } from './guest-focus-repository';
-import { createGuestHabitRepository } from './guest-habit-repository';
+import { createGuestHabitRepository, GuestHabitRepository } from './guest-habit-repository';
 import { createGuestTodayRepository } from './guest-today-repository';
+
+interface InjectedMutation {
+  store: string;
+  value: unknown;
+}
+
+function createFailingTxDb(
+  db: IDBPDatabase<GuestTodayDB>,
+  options: {
+    failOnHabitPut?: boolean;
+    failOnRoutinePut?: (routineId: string) => boolean;
+    onMutationIssued?: (storeName: string, value: unknown) => void;
+  },
+): IDBPDatabase<GuestTodayDB> {
+  return new Proxy(db, {
+    get(target, prop, receiver) {
+      if (prop === 'transaction') {
+        return (...args: Parameters<IDBPDatabase<GuestTodayDB>['transaction']>) => {
+          const tx = Reflect.apply(target.transaction, target, args);
+          const originalObjectStore = tx.objectStore.bind(tx);
+          tx.objectStore = (storeName: never) => {
+            const store = originalObjectStore(storeName);
+            const originalPut = store.put.bind(store);
+            store.put = async (val: unknown, key?: unknown) => {
+              options.onMutationIssued?.(storeName as string, val);
+              if (storeName === 'habits' && options.failOnHabitPut) {
+                try {
+                  tx.abort();
+                } catch {}
+                throw new Error('Simulated failure during habit write');
+              }
+              const valObj =
+                val && typeof val === 'object' && 'id' in val ? (val as { id: string }) : null;
+              if (storeName === 'routines' && valObj && options.failOnRoutinePut?.(valObj.id)) {
+                try {
+                  tx.abort();
+                } catch {}
+                throw new Error(`Simulated failure during routine write for ${valObj.id}`);
+              }
+              return originalPut(val, key);
+            };
+            return store;
+          };
+          return tx;
+        };
+      }
+      return Reflect.get(target, prop, receiver);
+    },
+  });
+}
 
 function dbName(): string {
   return `personal-productivity-habit-test-${crypto.randomUUID()}`;
@@ -423,6 +473,180 @@ describe('guest-habit-repository', () => {
     // Routine A still has h_math
     const rAReload = await repo.getRoutine('r_a');
     expect(rAReload.ok && rAReload.value?.habitIds).toEqual(['h_math']);
+  });
+
+  it('2. ATOMIC ROLLBACK (CREATE): rolls back routine mutation when habit write fails mid-transaction, leaving zero ghost records; then succeeds on retry', async () => {
+    const name = dbName();
+    const repo = await createGuestHabitRepository({ databaseName: name });
+
+    const rMorning: Routine = {
+      id: 'r_morning',
+      name: 'Morning Routine',
+      contextLabel: '07:00',
+      habitIds: [],
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    await repo.saveRoutine(rMorning);
+
+    const newHabit: Habit = {
+      ...habitSample,
+      id: 'h_new',
+      title: 'New Habit',
+    };
+
+    // 1. Initial State: Habit does not exist, Routine exists with empty habitIds
+    const initialHabit = await repo.getHabit('h_new');
+    expect(initialHabit.ok && initialHabit.value).toBe(null);
+    const initialRoutine = await repo.getRoutine('r_morning');
+    expect(initialRoutine.ok && initialRoutine.value?.habitIds).toEqual([]);
+
+    // 2. Setup failing proxy DB: routine write succeeds, but subsequent habit write fails mid-transaction
+    const mutationsIssued: InjectedMutation[] = [];
+    const rawDb = await openDB<GuestTodayDB>(name, GUEST_DB_VERSION);
+    const failingDb = createFailingTxDb(rawDb, {
+      failOnHabitPut: true,
+      onMutationIssued: (store, value) => {
+        mutationsIssued.push({ store, value });
+      },
+    });
+    const failingRepo = new GuestHabitRepository(failingDb);
+
+    // 3. Exercise: createHabitWithRoutine fails mid-transaction
+    const failRes = await failingRepo.createHabitWithRoutine(newHabit, 'r_morning');
+    expect(failRes.ok).toBe(false);
+    if (!failRes.ok) {
+      expect(failRes.code).toBe('persistence_write_failed');
+    }
+
+    // 4. Assert mutations WERE issued prior to failure
+    expect(
+      mutationsIssued.some(
+        (m) =>
+          m.store === 'routines' &&
+          Boolean(
+            m.value &&
+              typeof m.value === 'object' &&
+              'habitIds' in m.value &&
+              Array.isArray((m.value as { habitIds: string[] }).habitIds) &&
+              (m.value as { habitIds: string[] }).habitIds.includes('h_new'),
+          ),
+      ),
+    ).toBe(true);
+
+    // 5. Assert complete rollback on repo and raw IndexedDB
+    const habitCheck = await repo.getHabit('h_new');
+    expect(habitCheck.ok && habitCheck.value).toBe(null);
+
+    const routineCheck = await repo.getRoutine('r_morning');
+    expect(routineCheck.ok && routineCheck.value?.habitIds).toEqual([]);
+
+    const allHabitsCheck = await repo.listHabits(true);
+    expect(allHabitsCheck.ok && allHabitsCheck.value).toHaveLength(0);
+
+    const verifyRawDb = await openDB(name, GUEST_DB_VERSION);
+    const rawHabit = await verifyRawDb.get('habits', 'h_new');
+    expect(rawHabit).toBeUndefined();
+    const rawRoutine = await verifyRawDb.get('routines', 'r_morning');
+    expect(rawRoutine.habitIds).toEqual([]);
+    verifyRawDb.close();
+    rawDb.close();
+
+    // 6. Retry the create operation on normal repo
+    const retryRes = await repo.createHabitWithRoutine(newHabit, 'r_morning');
+    expect(retryRes.ok).toBe(true);
+
+    // 7. Assert exactly ONE habit and ONE routine membership exist
+    const habitAfter = await repo.getHabit('h_new');
+    expect(habitAfter.ok && habitAfter.value?.id).toBe('h_new');
+
+    const routineAfter = await repo.getRoutine('r_morning');
+    expect(routineAfter.ok && routineAfter.value?.habitIds).toEqual(['h_new']);
+
+    const allHabitsAfter = await repo.listHabits(true);
+    expect(allHabitsAfter.ok && allHabitsAfter.value).toHaveLength(1);
+  });
+
+  it('2. ATOMIC ROLLBACK (UPDATE + ROUTINE MOVE): rolls back routine membership transfers when habit write fails mid-transaction', async () => {
+    const name = dbName();
+    const repo = await createGuestHabitRepository({ databaseName: name });
+
+    await repo.saveHabit(habitSample);
+
+    const rA: Routine = {
+      id: 'r_a',
+      name: 'Routine A',
+      contextLabel: '',
+      habitIds: ['h_math'],
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    await repo.saveRoutine(rA);
+
+    const rB: Routine = {
+      id: 'r_b',
+      name: 'Routine B',
+      contextLabel: '',
+      habitIds: [],
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    await repo.saveRoutine(rB);
+
+    const updatedHabit: Habit = {
+      ...habitSample,
+      title: 'Math Study Advanced',
+      updatedAt: '2026-08-31T10:00:00.000Z',
+    };
+
+    // Setup failing proxy DB: routine writes succeed, but habit write fails mid-transaction
+    const mutationsIssued: InjectedMutation[] = [];
+    const rawDb = await openDB<GuestTodayDB>(name, GUEST_DB_VERSION);
+    const failingDb = createFailingTxDb(rawDb, {
+      failOnHabitPut: true,
+      onMutationIssued: (store, value) => {
+        mutationsIssued.push({ store, value });
+      },
+    });
+    const failingRepo = new GuestHabitRepository(failingDb);
+
+    // Exercise: updateHabitWithRoutine moving from r_a to r_b fails mid-transaction
+    const failRes = await failingRepo.updateHabitWithRoutine(habitSample, updatedHabit, 'r_b');
+    expect(failRes.ok).toBe(false);
+    if (!failRes.ok) {
+      expect(failRes.code).toBe('persistence_write_failed');
+    }
+
+    // Assert routine mutation was issued in transaction prior to failure
+    expect(mutationsIssued.some((m) => m.store === 'routines')).toBe(true);
+
+    // Assert rollback: Habit fields unchanged
+    const habitReload = await repo.getHabit('h_math');
+    expect(habitReload.ok && habitReload.value?.title).toBe('Math Study');
+
+    // Routine A still contains h_math in original position
+    const rAReload = await repo.getRoutine('r_a');
+    expect(rAReload.ok && rAReload.value?.habitIds).toEqual(['h_math']);
+
+    // Routine B does NOT contain h_math
+    const rBReload = await repo.getRoutine('r_b');
+    expect(rBReload.ok && rBReload.value?.habitIds).toEqual([]);
+
+    // Global invariant: exactly 1 habit exists with no duplicates
+    const allHabits = await repo.listHabits(true);
+    expect(allHabits.ok && allHabits.value).toHaveLength(1);
+    expect(allHabits.ok && allHabits.value[0].title).toBe('Math Study');
+
+    // Raw DB verification proves rollback
+    const verifyRawDb = await openDB(name, GUEST_DB_VERSION);
+    const rawHabit = await verifyRawDb.get('habits', 'h_math');
+    expect(rawHabit.title).toBe('Math Study');
+    const rawRA = await verifyRawDb.get('routines', 'r_a');
+    expect(rawRA.habitIds).toEqual(['h_math']);
+    const rawRB = await verifyRawDb.get('routines', 'r_b');
+    expect(rawRB.habitIds).toEqual([]);
+    verifyRawDb.close();
+    rawDb.close();
   });
 
   it('2. ATOMIC HABIT + ROUTINE MUTATIONS: retry create after failure results in exactly one habit and correct routine membership', async () => {
