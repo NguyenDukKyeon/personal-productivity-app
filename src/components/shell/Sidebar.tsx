@@ -13,7 +13,6 @@ import {
 import { cn } from '@/lib/utils';
 
 const laterItems = [
-  { name: 'Habits', icon: CheckCircle2 },
   { name: 'Planner', icon: CalendarDays },
   { name: 'Projects', icon: FolderGit2 },
   { name: 'Review', icon: BarChart3 },
@@ -53,6 +52,7 @@ export function Sidebar({ className }: { className?: string }) {
   const pathname = usePathname();
   const todayActive = pathname === '/today' || pathname === '/';
   const focusActive = pathname === '/focus' || pathname.startsWith('/focus');
+  const habitsActive = pathname === '/habits' || pathname.startsWith('/habits');
 
   return (
     <aside
@@ -80,6 +80,9 @@ export function Sidebar({ className }: { className?: string }) {
         </NavLink>
         <NavLink href="/focus" active={focusActive} icon={Flame}>
           Focus
+        </NavLink>
+        <NavLink href="/habits" active={habitsActive} icon={CheckCircle2}>
+          Habits
         </NavLink>
 
         {laterItems.map((item) => {

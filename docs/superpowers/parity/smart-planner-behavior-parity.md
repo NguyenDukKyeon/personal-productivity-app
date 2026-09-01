@@ -1,4 +1,4 @@
-# Smart Planner Behavior Parity Register
+﻿# Smart Planner Behavior Parity Register
 
 **Baseline:** `NguyenDukKyeon/smart-planner`
 
@@ -14,12 +14,15 @@ This register prevents the rebuild from silently losing useful Smart Planner beh
 | Distraction Inbox | SUPERSEDED | First-class `Distraction` records during running/paused sessions; Smart Planner had no equivalent inbox. Capture does not pause the timer. |
 | Execution evidence vs scheduled time | PRESERVED | TimeBlock remains plan; `FocusSession.focusedDurationMs` is reality; `WorkItem.actualMinutes` is derived only from completed sessions |
 | Focus preferences, auto-break, ambient soundscapes, mini/studio timer, notifications | NOT YET IMPLEMENTED | Later Focus chrome; XP/coins/chimes stay out of the product |
-| Habit tracking | NOT YET IMPLEMENTED | Habits & Routines |
+| Habit tracking & consistency metrics | PRESERVED | `src/domain/habits` + Habits & Routines (`/habits`). Effective-dated schedule revisions, active lifecycle intervals, and factual consistency rates without gamification/streaks. |
+| Minimum Viable Version (MVV) & Low friction fallback | SUPERSEDED | First-class `minimumVersion` property on `Habit` and `minimum` check-in kind. Replaces all-or-nothing completion from legacy Smart Planner. |
+| Quick Recovery after Misses | SUPERSEDED | Schedule-derived recovery state detecting missed scheduled days and offering immediate resume with minimum version; replaces legacy streak reset to 0 upon missed day. |
+| Routines & Contextual Grouping | SUPERSEDED | Canonical single-source `Routine.habitIds` grouping (`id`, `name`, `contextLabel`, `habitIds`) without duplicating `routineId` in Habit. |
 | Projects / roadmaps / lesson placement | NOT YET IMPLEMENTED | Projects/Planner |
 | Progress analytics | NOT YET IMPLEMENTED | Review/Analytics |
 | Weekly metrics / review | NOT YET IMPLEMENTED | Shutdown + Weekly Review |
 | PWA / reminders / Web Push | NOT YET IMPLEMENTED | PWA/Push |
-| Safe guest persistence | PRESERVED | Validated IndexedDB guest repository (`src/infrastructure/persistence/guest`) |
+| Safe guest persistence & Corrupt Record Rejection | PRESERVED | Validated IndexedDB guest repository (`src/infrastructure/persistence/guest`) with strict `corrupt_record` rejection that never silently drops or mutates corrupt stored bytes. |
 | Backup / import / export / legacy migration | NOT YET IMPLEMENTED | Backup/Migration |
 | Daily commitment snapshot | SUPERSEDED | Immutable snapshot + divergence; replaces implicit same-day overwrite |
 

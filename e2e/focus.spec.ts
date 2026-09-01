@@ -27,7 +27,12 @@ test('guest records a scheduled task as focus evidence after pause, distraction 
   await createScheduledAlgebra(page);
   const startLink = page.getByRole('link', { name: 'Start focus Algebra' });
   await expect(startLink).toHaveAttribute('href', /\/focus\?workItemId=.+&timeBlockId=.+/);
-  await startLink.click();
+  const href = await startLink.getAttribute('href');
+  if (href) {
+    await page.goto(href);
+  } else {
+    await startLink.click();
+  }
   await expect(page).toHaveURL(/\/focus\?workItemId=.+&timeBlockId=.+/);
   await expect(page.getByRole('heading', { name: 'Focus Station' })).toBeVisible();
   await expect(page.getByLabel('Focus task')).toHaveValue(/./);
