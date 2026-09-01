@@ -1,7 +1,7 @@
 ﻿import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 
 export const GUEST_DB_NAME = 'personal-productivity-guest';
-export const GUEST_DB_VERSION = 3;
+export const GUEST_DB_VERSION = 4;
 
 export interface GuestTodayDB extends DBSchema {
   workItems: {
@@ -55,6 +55,16 @@ export interface GuestTodayDB extends DBSchema {
   routines: {
     key: string;
     value: unknown;
+  };
+  projects: {
+    key: string;
+    value: unknown;
+    indexes: { status: string };
+  };
+  projectMilestones: {
+    key: string;
+    value: unknown;
+    indexes: { projectId: string };
   };
 }
 
@@ -117,6 +127,16 @@ export async function openGuestTodayDb(
 
       if (!db.objectStoreNames.contains('routines')) {
         db.createObjectStore('routines', { keyPath: 'id' });
+      }
+
+      if (!db.objectStoreNames.contains('projects')) {
+        const store = db.createObjectStore('projects', { keyPath: 'id' });
+        store.createIndex('status', 'status');
+      }
+
+      if (!db.objectStoreNames.contains('projectMilestones')) {
+        const store = db.createObjectStore('projectMilestones', { keyPath: 'id' });
+        store.createIndex('projectId', 'projectId');
       }
     },
   });
