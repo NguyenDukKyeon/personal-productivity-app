@@ -8,8 +8,8 @@ export default defineConfig({
   reporter: process.env.CI ? 'github' : 'list',
   use: {
     baseURL: 'http://127.0.0.1:3000',
-    timezoneId: 'Asia/Bangkok',
     trace: 'retain-on-failure',
+    timezoneId: 'Asia/Bangkok',
   },
   webServer: {
     command: 'npm run dev',

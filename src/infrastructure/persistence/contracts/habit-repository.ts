@@ -11,7 +11,7 @@ export interface HabitRepository {
   updateHabitWithRoutine(
     previousHabit: Habit,
     nextHabit: Habit,
-    routineId?: string | null,
+    routineId: string | null | undefined,
   ): Promise<Result<void>>;
 
   getCheckIn(habitId: string, dateKey: string): Promise<Result<HabitCheckIn | null>>;

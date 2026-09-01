@@ -1,8 +1,7 @@
-import { parseLocalDateKey, shiftLocalDateKey, toLocalDateKey } from '../shared/local-date';
+import { parseLocalDateKey, toLocalDateKey } from '../shared/local-date';
 import { err, ok, type Result } from '../shared/result';
 import {
   isHabitScheduledForDate as isScheduleMatchingDate,
-  validateHabitSchedule,
   type HabitSchedule,
 } from './habit-schedule';
 
@@ -111,27 +110,13 @@ export function isHabitScheduledOnDate(habit: Habit, dateKey: string): boolean {
   return isScheduleMatchingDate(schedule, dateKey);
 }
 
-function schedulesEqual(a: HabitSchedule, b: HabitSchedule): boolean {
-  return JSON.stringify(a) === JSON.stringify(b);
+function shiftLocalDate(dateKey: string, offsetDays: number): string {
+  const parts = parseLocalDateKey(dateKey);
+  if (!parts) return dateKey;
+  const utc = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + offsetDays));
+  return toLocalDateKey(new Date(utc.getUTCFullYear(), utc.getUTCMonth(), utc.getUTCDate()));
 }
 
-/**
- * Semantic pre-write / pre-read validation across status, activeIntervals,
- * scheduleRevisions, schedule, and createdAt — not only each field independently.
- *
- * Active interval invariants:
- * - Chronologically sorted, no overlaps, no duplicates
- * - At most one open interval; if open, it is the final interval
- * - status === 'active' implies exactly one final open interval
- * - status === 'archived' implies zero open intervals
- * - Interval start cannot precede the habit creation local date
- * - Closed interval endDate is strictly after startDate (empty same-day
- *   intervals are rejected)
- *
- * Same-day archive semantics (see archiveHabit): archive takes effect from
- * the NEXT local calendar day, so endDate is exclusive of tomorrow and
- * today's scheduled opportunity / check-in evidence is preserved.
- */
 export function validateHabitPreWrite(habit: Habit): Result<void> {
   const id = (habit.id ?? '').trim();
   if (!id) return err('invalid_habit_id', 'Habit ID cannot be empty.');
@@ -161,10 +146,6 @@ export function validateHabitPreWrite(habit: Habit): Result<void> {
       `Description cannot exceed ${MAX_DESCRIPTION_LENGTH} characters.`,
     );
 
-  if (habit.status !== 'active' && habit.status !== 'archived') {
-    return err('invalid_status', 'Habit status must be active or archived.');
-  }
-
   if (!isValidIsoString(habit.createdAt)) {
     return err('invalid_created_at', 'Habit createdAt must be a valid ISO 8601 timestamp.');
   }
@@ -175,112 +156,100 @@ export function validateHabitPreWrite(habit: Habit): Result<void> {
     return err('updated_at_before_created_at', 'Habit updatedAt cannot precede createdAt.');
   }
 
-  const createdLocalDate = toLocalDateKey(new Date(habit.createdAt));
+  if (habit.status !== 'active' && habit.status !== 'archived') {
+    return err('invalid_status', 'Habit status must be active or archived.');
+  }
 
-  const scheduleValidation = validateHabitSchedule(habit.schedule);
-  if (!scheduleValidation.ok) return scheduleValidation;
+  const createdDateKey = toLocalDateKey(new Date(habit.createdAt));
 
+  // Validate activeIntervals
   if (!Array.isArray(habit.activeIntervals) || habit.activeIntervals.length === 0) {
     return err('empty_active_intervals', 'Habit activeIntervals cannot be empty.');
   }
 
-  let openCount = 0;
   for (let i = 0; i < habit.activeIntervals.length; i++) {
     const interval = habit.activeIntervals[i];
     if (!parseLocalDateKey(interval.startDate)) {
       return err('invalid_interval_start_date', 'Interval startDate must be a valid YYYY-MM-DD date.');
     }
-    if (interval.startDate < createdLocalDate) {
-      return err(
-        'interval_before_creation',
-        'Interval startDate cannot precede the habit creation local date.',
-      );
+    if (interval.startDate < createdDateKey) {
+      return err('interval_start_before_creation', 'Interval startDate cannot precede habit creation local date.');
     }
-    if (interval.endDate === null) {
-      openCount++;
-      if (i !== habit.activeIntervals.length - 1) {
-        return err('open_interval_not_final', 'An open interval must be the final active interval.');
-      }
-    } else {
+
+    if (interval.endDate !== null) {
       if (!parseLocalDateKey(interval.endDate)) {
         return err('invalid_interval_end_date', 'Interval endDate must be a valid YYYY-MM-DD date.');
       }
       if (interval.endDate <= interval.startDate) {
-        return err(
-          'invalid_interval_range',
-          'Interval endDate must be strictly after startDate.',
-        );
+        return err('invalid_interval_range', 'Interval endDate must be strictly after startDate.');
       }
     }
 
     if (i > 0) {
-      const prev = habit.activeIntervals[i - 1];
-      if (interval.startDate < prev.startDate) {
-        return err('intervals_not_sorted', 'Active intervals must be sorted chronologically.');
+      const prevInterval = habit.activeIntervals[i - 1];
+      if (prevInterval.endDate === null) {
+        return err('open_interval_not_last', 'Only the final active interval may be open.');
       }
-      if (prev.startDate === interval.startDate && prev.endDate === interval.endDate) {
-        return err('duplicate_intervals', 'Active intervals cannot contain duplicates.');
+      if (interval.startDate < prevInterval.endDate) {
+        return err('overlapping_intervals', 'Active intervals must be sorted chronologically and cannot overlap.');
       }
-      if (prev.endDate === null || prev.endDate > interval.startDate) {
-        return err('overlapping_intervals', 'Active intervals cannot overlap.');
-      }
+    }
+
+    if (interval.endDate === null && i !== habit.activeIntervals.length - 1) {
+      return err('open_interval_not_last', 'Only the final active interval may be open.');
     }
   }
 
-  if (openCount > 1) {
-    return err('multiple_open_intervals', 'A habit can have at most one open active interval.');
+  const lastInterval = habit.activeIntervals[habit.activeIntervals.length - 1];
+  if (habit.status === 'active' && lastInterval.endDate !== null) {
+    return err('active_habit_missing_open_interval', 'Active habit must have exactly one open final interval.');
   }
-  if (habit.status === 'active' && openCount !== 1) {
-    return err(
-      'active_requires_open_interval',
-      'An active habit must have exactly one final open interval.',
-    );
-  }
-  if (habit.status === 'archived' && openCount !== 0) {
-    return err(
-      'archived_has_open_interval',
-      'An archived habit cannot have an open active interval.',
-    );
+  if (habit.status === 'archived' && lastInterval.endDate === null) {
+    return err('archived_habit_has_open_interval', 'Archived habit cannot have an open interval.');
   }
 
+  // Validate scheduleRevisions
   if (!Array.isArray(habit.scheduleRevisions) || habit.scheduleRevisions.length === 0) {
     return err('empty_schedule_revisions', 'Habit scheduleRevisions cannot be empty.');
   }
 
-  const seenEffectiveFrom = new Set<string>();
   for (let i = 0; i < habit.scheduleRevisions.length; i++) {
     const rev = habit.scheduleRevisions[i];
     if (!parseLocalDateKey(rev.effectiveFromDate)) {
-      return err(
-        'invalid_effective_from_date',
-        'Schedule revision effectiveFromDate must be a valid YYYY-MM-DD date.',
-      );
+      return err('invalid_effective_from_date', 'Schedule revision effectiveFromDate must be a valid YYYY-MM-DD date.');
     }
-    if (rev.effectiveFromDate < createdLocalDate) {
-      return err(
-        'revision_before_creation',
-        'Schedule revision cannot precede the habit creation local date.',
-      );
+    if (rev.effectiveFromDate < createdDateKey) {
+      return err('schedule_revision_before_creation', 'Schedule revision cannot precede habit creation local date.');
     }
-    if (seenEffectiveFrom.has(rev.effectiveFromDate)) {
-      return err('duplicate_effective_from_date', 'Schedule revision effectiveFromDate values must be unique.');
-    }
-    seenEffectiveFrom.add(rev.effectiveFromDate);
-
-    if (i > 0 && rev.effectiveFromDate < habit.scheduleRevisions[i - 1].effectiveFromDate) {
-      return err('revisions_not_sorted', 'Schedule revisions must be sorted chronologically.');
+    if (i > 0) {
+      const prevRev = habit.scheduleRevisions[i - 1];
+      if (rev.effectiveFromDate <= prevRev.effectiveFromDate) {
+        return err('schedule_revisions_not_chronological', 'Schedule revisions must be sorted chronologically with unique effective dates.');
+      }
     }
 
-    const revSchedule = validateHabitSchedule(rev.schedule);
-    if (!revSchedule.ok) return revSchedule;
+    if (rev.schedule.kind !== 'daily' && rev.schedule.kind !== 'weekdays') {
+      return err('invalid_schedule_kind', 'Schedule kind must be daily or weekdays.');
+    }
+    if (rev.schedule.kind === 'weekdays') {
+      if (!Array.isArray(rev.schedule.weekdays) || rev.schedule.weekdays.length === 0) {
+        return err('empty_weekdays', 'Weekday schedule must contain at least one day.');
+      }
+      const uniqueDays = new Set(rev.schedule.weekdays);
+      if (uniqueDays.size !== rev.schedule.weekdays.length) {
+        return err('duplicate_weekdays', 'Weekday schedule cannot contain duplicates.');
+      }
+      for (const d of rev.schedule.weekdays) {
+        if (!Number.isInteger(d) || d < 1 || d > 7) {
+          return err('invalid_weekday_number', 'Weekday number must be an integer between 1 and 7.');
+        }
+      }
+    }
   }
 
   const latestRevision = habit.scheduleRevisions[habit.scheduleRevisions.length - 1];
-  if (!schedulesEqual(latestRevision.schedule, habit.schedule)) {
-    return err(
-      'schedule_revision_mismatch',
-      'Latest schedule revision must equal Habit.schedule.',
-    );
+  if (JSON.stringify(latestRevision.schedule) !== JSON.stringify(habit.schedule)) {
+    return err('schedule_mismatch', 'Latest schedule revision must match habit.schedule.');
   }
 
   return ok(undefined);
@@ -320,6 +289,7 @@ export function createHabit(
   const now = input.nowIso ?? new Date().toISOString();
   const createdDateKey = toLocalDateKey(new Date(now));
 
+  const isArchived = input.status === 'archived';
   const habit: Habit = {
     id,
     title,
@@ -336,7 +306,7 @@ export function createHabit(
     activeIntervals: [
       {
         startDate: createdDateKey,
-        endDate: null,
+        endDate: isArchived ? shiftLocalDate(createdDateKey, 1) : null,
       },
     ],
     status: input.status ?? 'active',
@@ -429,64 +399,56 @@ export function updateHabit(
   return ok(updatedHabit);
 }
 
-/**
- * Archive takes effect from the NEXT local calendar day for schedule and
- * metrics. The archive-day interval end is exclusive of tomorrow, so a
- * scheduled opportunity or valid check-in already recorded earlier today
- * remains historically true. Status becomes 'archived' immediately (the
- * habit leaves the active today list) without rewriting completed history.
- */
 export function archiveHabit(habit: Habit, nowIso?: string): Result<Habit> {
   if (habit.status === 'archived') {
-    return err('invalid_transition', 'Cannot archive an already archived habit.');
+    return err('invalid_transition', 'Habit is already archived.');
   }
 
   const now = nowIso ?? new Date().toISOString();
   const archiveDate = toLocalDateKey(new Date(now));
-  const nextDay = shiftLocalDateKey(archiveDate, 1);
-  if (!nextDay) {
-    return err('invalid_archive_date', 'Archive date could not be shifted to the next local day.');
-  }
+  // Archive takes effect from the NEXT local calendar day for schedule/metrics purposes
+  const effectiveEndDate = shiftLocalDate(archiveDate, 1);
 
   const activeIntervals = habit.activeIntervals.map((interval, idx) => {
     if (idx === habit.activeIntervals.length - 1 && interval.endDate === null) {
-      const endDate = nextDay > interval.startDate ? nextDay : shiftLocalDateKey(interval.startDate, 1);
-      return { ...interval, endDate: endDate ?? nextDay };
+      const endDate = effectiveEndDate > interval.startDate ? effectiveEndDate : shiftLocalDate(interval.startDate, 1);
+      return { ...interval, endDate };
     }
     return interval;
   });
 
-  const archived: Habit = {
+  const archivedHabit: Habit = {
     ...habit,
     activeIntervals,
     status: 'archived',
     updatedAt: now,
   };
 
-  const validation = validateHabitPreWrite(archived);
+  const validation = validateHabitPreWrite(archivedHabit);
   if (!validation.ok) {
     return validation;
   }
 
-  return ok(archived);
+  return ok(archivedHabit);
 }
 
 export function unarchiveHabit(habit: Habit, nowIso?: string): Result<Habit> {
   if (habit.status === 'active') {
-    return err('invalid_transition', 'Cannot unarchive an already active habit.');
+    return err('invalid_transition', 'Habit is already active.');
   }
 
   const now = nowIso ?? new Date().toISOString();
   const unarchiveDate = toLocalDateKey(new Date(now));
-  const last = habit.activeIntervals[habit.activeIntervals.length - 1];
 
+  const lastInterval = habit.activeIntervals[habit.activeIntervals.length - 1];
   let activeIntervals: HabitLifecycleInterval[];
-  if (last && last.endDate !== null && unarchiveDate < last.endDate) {
-    // Archive has not yet taken effect for this local day — reopen the interval
-    // instead of creating an overlapping open interval.
-    activeIntervals = habit.activeIntervals.map((interval, idx) =>
-      idx === habit.activeIntervals.length - 1 ? { ...interval, endDate: null } : interval,
-    );
+
+  if (lastInterval && lastInterval.endDate !== null && unarchiveDate < lastInterval.endDate) {
+    // Reopening on the same day or before the next-day effective end date
+    activeIntervals = habit.activeIntervals.slice(0, -1).concat({
+      ...lastInterval,
+      endDate: null,
+    });
   } else {
     activeIntervals = [
       ...habit.activeIntervals,
@@ -497,17 +459,17 @@ export function unarchiveHabit(habit: Habit, nowIso?: string): Result<Habit> {
     ];
   }
 
-  const unarchived: Habit = {
+  const unarchivedHabit: Habit = {
     ...habit,
     activeIntervals,
     status: 'active',
     updatedAt: now,
   };
 
-  const validation = validateHabitPreWrite(unarchived);
+  const validation = validateHabitPreWrite(unarchivedHabit);
   if (!validation.ok) {
     return validation;
   }
 
-  return ok(unarchived);
+  return ok(unarchivedHabit);
 }

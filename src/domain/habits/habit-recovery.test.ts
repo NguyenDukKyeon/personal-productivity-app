@@ -124,6 +124,7 @@ describe('habit-recovery domain logic (lifecycle aware)', () => {
     if (!archivedRes.ok) throw new Error('Archive failed');
     const unarchivedRes = unarchiveHabit(archivedRes.value, '2026-08-28T07:00:00.000Z');
     if (!unarchivedRes.ok) throw new Error('Unarchive failed');
+    const unarchived = unarchivedRes.value;
 
     // Completed Aug 28 and Aug 29
     const checkIns = [
@@ -143,7 +144,7 @@ describe('habit-recovery domain logic (lifecycle aware)', () => {
     });
 
     const recoveryState = deriveHabitRecoveryState({
-      habit: unarchivedRes.value,
+      habit: unarchived,
       currentDateKey: '2026-08-30',
       checkIns,
       lookbackDays: 14,

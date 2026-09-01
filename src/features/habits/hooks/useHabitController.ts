@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useCallback, useEffect, useState } from 'react';
 import type { HabitCheckInKind } from '@/domain/habits/habit-check-in';
@@ -69,9 +69,9 @@ export function useHabitController(service: HabitService, date: string) {
     createRoutine: (input: CreateRoutineInput) => runMutation(() => service.createRoutine(input)),
     updateRoutine: (id: string, patch: UpdateRoutineInput) =>
       runMutation(() => service.updateRoutine(id, patch)),
-    deleteRoutine: (id: string) => runMutation(() => service.deleteRoutine(id)),
     reorderRoutine: (id: string, habitIds: string[]) =>
       runMutation(() => service.reorderRoutine(id, habitIds)),
+    deleteRoutine: (id: string) => runMutation(() => service.deleteRoutine(id)),
     getHabitHistory: (habitId: string) => service.getHabitHistory(habitId),
   };
 }

@@ -1,4 +1,4 @@
-﻿import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import type { Habit } from '@/domain/habits/habit';
 import type { HabitCheckIn } from '@/domain/habits/habit-check-in';
 import type { Routine } from '@/domain/habits/routine';
@@ -29,20 +29,27 @@ class InMemoryHabitRepository implements HabitRepository {
   async createHabitWithRoutine(habit: Habit, routineId: string | null): Promise<Result<void>> {
     this.habits.set(habit.id, habit);
     if (routineId) {
-      return this.assignHabitToRoutine(habit.id, routineId);
+      const assignRes = await this.assignHabitToRoutine(habit.id, routineId);
+      if (!assignRes.ok) return assignRes;
     }
     return ok(undefined);
   }
 
   async updateHabitWithRoutine(
-    _previousHabit: Habit,
+    previousHabit: Habit,
     nextHabit: Habit,
-    routineId?: string | null,
+    routineId: string | null | undefined,
   ): Promise<Result<void>> {
     this.habits.set(nextHabit.id, nextHabit);
-    if (routineId === undefined) return ok(undefined);
-    if (routineId === null) return this.removeHabitFromRoutine(nextHabit.id);
-    return this.assignHabitToRoutine(nextHabit.id, routineId);
+    if (routineId !== undefined) {
+      if (routineId === null) {
+        await this.removeHabitFromRoutine(nextHabit.id);
+      } else {
+        const assignRes = await this.assignHabitToRoutine(nextHabit.id, routineId);
+        if (!assignRes.ok) return assignRes;
+      }
+    }
+    return ok(undefined);
   }
 
   async getCheckIn(habitId: string, dateKey: string): Promise<Result<HabitCheckIn | null>> {
@@ -288,10 +295,8 @@ describe('HabitService application service', () => {
       expect(unscheduledCheck.code).toBe('habit_not_scheduled');
     }
 
-    // Archived habit rejected after archive takes effect next local day
-    fixedNow = new Date('2026-08-30T07:00:00.000Z');
+    // Archived habit rejected
     await service.archiveHabit(habit.id);
-    fixedNow = new Date('2026-08-31T07:00:00.000Z');
     const archivedCheck = await service.recordCheckIn({
       habitId: habit.id,
       date: '2026-08-31',

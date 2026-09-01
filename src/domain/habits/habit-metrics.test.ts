@@ -37,7 +37,6 @@ describe('habit-metrics domain logic (lifecycle aware)', () => {
       habit: habit.value,
       dateKeys: past14Days,
       checkIns,
-      asOfDateKey: '2026-08-31',
     });
 
     // Scheduled days should be ONLY 1 (Aug 31), not 14!
@@ -45,121 +44,8 @@ describe('habit-metrics domain logic (lifecycle aware)', () => {
     expect(metrics.minimumCount).toBe(1);
     expect(metrics.fullCount).toBe(0);
     expect(metrics.missedCount).toBe(0);
-    expect(metrics.pendingCount).toBe(0);
     expect(metrics.consistencyRate).toBe(100);
     expect(metrics.recoveriesCompleted).toBe(0);
-  });
-
-  it('treats today without a check-in as pending, not missed', () => {
-    const habit = createHabit({
-      id: 'h_pending',
-      title: 'Morning pages',
-      minimumVersion: '1 sentence',
-      schedule: { kind: 'daily' },
-      nowIso: '2026-08-29T07:00:00.000Z',
-    });
-    if (!habit.ok) throw new Error('Habit create failed');
-
-    const dateKeys = ['2026-08-29', '2026-08-30', '2026-08-31'];
-    const metrics = calculateHabitMetrics({
-      habit: habit.value,
-      dateKeys,
-      checkIns: [],
-      asOfDateKey: '2026-08-31',
-    });
-
-    expect(metrics.scheduledDays).toBe(3);
-    expect(metrics.missedCount).toBe(2);
-    expect(metrics.pendingCount).toBe(1);
-    expect(metrics.consistencyRate).toBe(0);
-  });
-
-  it('counts yesterday without a check-in as missed', () => {
-    const habit = createHabit({
-      id: 'h_missed',
-      title: 'Journal',
-      minimumVersion: '1 line',
-      schedule: { kind: 'daily' },
-      nowIso: '2026-08-30T07:00:00.000Z',
-    });
-    if (!habit.ok) throw new Error('Habit create failed');
-
-    const metrics = calculateHabitMetrics({
-      habit: habit.value,
-      dateKeys: ['2026-08-30', '2026-08-31'],
-      checkIns: [],
-      asOfDateKey: '2026-08-31',
-    });
-
-    expect(metrics.missedCount).toBe(1);
-    expect(metrics.pendingCount).toBe(1);
-  });
-
-  it('includes today in the consistency denominator after completion', () => {
-    const habit = createHabit({
-      id: 'h_done',
-      title: 'Walk',
-      minimumVersion: '5 minutes',
-      schedule: { kind: 'daily' },
-      nowIso: '2026-08-30T07:00:00.000Z',
-    });
-    if (!habit.ok) throw new Error('Habit create failed');
-
-    const todayFull = createHabitCheckIn({
-      habitId: 'h_done',
-      date: '2026-08-31',
-      kind: 'full',
-    });
-    if (!todayFull.ok) throw new Error('CheckIn error');
-
-    const metrics = calculateHabitMetrics({
-      habit: habit.value,
-      dateKeys: ['2026-08-30', '2026-08-31'],
-      checkIns: [todayFull.value],
-      asOfDateKey: '2026-08-31',
-    });
-
-    expect(metrics.pendingCount).toBe(0);
-    expect(metrics.missedCount).toBe(1);
-    expect(metrics.fullCount).toBe(1);
-    expect(metrics.scheduledDays).toBe(2);
-    expect(metrics.consistencyRate).toBe(50);
-  });
-
-  it('preserves today Full evidence after a same-day archive', () => {
-    const habit = createHabit({
-      id: 'h_archive_today',
-      title: 'Stretch',
-      minimumVersion: '30 seconds',
-      schedule: { kind: 'daily' },
-      nowIso: '2026-08-31T07:00:00.000Z',
-    });
-    if (!habit.ok) throw new Error('Habit create failed');
-
-    const full = createHabitCheckIn({
-      habitId: 'h_archive_today',
-      date: '2026-08-31',
-      kind: 'full',
-      nowIso: '2026-08-31T08:00:00.000Z',
-    });
-    if (!full.ok) throw new Error('CheckIn error');
-
-    const archivedRes = archiveHabit(habit.value, '2026-08-31T18:00:00.000Z');
-    expect(archivedRes.ok).toBe(true);
-    if (!archivedRes.ok) return;
-
-    const metrics = calculateHabitMetrics({
-      habit: archivedRes.value,
-      dateKeys: ['2026-08-31'],
-      checkIns: [full.value],
-      asOfDateKey: '2026-08-31',
-    });
-
-    expect(metrics.scheduledDays).toBe(1);
-    expect(metrics.fullCount).toBe(1);
-    expect(metrics.missedCount).toBe(0);
-    expect(metrics.pendingCount).toBe(0);
-    expect(metrics.consistencyRate).toBe(100);
   });
 
   it('calculates metrics truthfully across schedule revisions and archive gaps', () => {
@@ -202,7 +88,6 @@ describe('habit-metrics domain logic (lifecycle aware)', () => {
       habit: updated.value,
       dateKeys,
       checkIns,
-      asOfDateKey: '2026-08-31',
     });
 
     // Scheduled days:
@@ -215,7 +100,104 @@ describe('habit-metrics domain logic (lifecycle aware)', () => {
     expect(metrics.fullCount).toBe(3);
     expect(metrics.minimumCount).toBe(1);
     expect(metrics.missedCount).toBe(3);
-    expect(metrics.pendingCount).toBe(0);
     expect(metrics.consistencyRate).toBe(Math.round((4 / 7) * 100)); // 57%
+  });
+
+  it('6. TODAY IS PENDING, NOT MISSED: distinguishes pending today from missed past days without penalizing consistency rate at 08:00', () => {
+    // Habit scheduled daily, created 2 days ago (Aug 29)
+    const habit = createHabit({
+      id: 'h_daily',
+      title: 'Morning Water',
+      minimumVersion: '1 glass',
+      schedule: { kind: 'daily' },
+      nowIso: '2026-08-29T07:00:00.000Z',
+    });
+    if (!habit.ok) throw new Error('Habit error');
+
+    // Case A: Aug 29 done (Full), Aug 30 missed, Aug 31 (today) has no check-in yet
+    const checkIns = [
+      createHabitCheckIn({ habitId: 'h_daily', date: '2026-08-29', kind: 'full' }),
+    ].map((r) => {
+      if (!r.ok) throw new Error('CheckIn error');
+      return r.value;
+    });
+
+    const dateKeys = ['2026-08-29', '2026-08-30', '2026-08-31'];
+
+    const metricsBeforeTodayDone = calculateHabitMetrics({
+      habit: habit.value,
+      dateKeys,
+      checkIns,
+      currentDateKey: '2026-08-31',
+    });
+
+    // Scheduled days = 3 (Aug 29, 30, 31)
+    expect(metricsBeforeTodayDone.scheduledDays).toBe(3);
+    expect(metricsBeforeTodayDone.fullCount).toBe(1);
+    expect(metricsBeforeTodayDone.missedCount).toBe(1); // Aug 30 is missed
+    expect(metricsBeforeTodayDone.pendingCount).toBe(1); // Aug 31 is pending, NOT missed!
+    // Consistency rate evaluated on completed historical denominator (Aug 29, 30): 1 full / 2 days = 50%
+    // NOT penalized to 33% at 08:00!
+    expect(metricsBeforeTodayDone.consistencyRate).toBe(50);
+
+    // Case B: User completes today (Aug 31) with Full
+    const todayCheckIn = createHabitCheckIn({ habitId: 'h_daily', date: '2026-08-31', kind: 'full' });
+    if (!todayCheckIn.ok) throw new Error(todayCheckIn.message);
+    const checkInsAfterToday = [
+      ...checkIns,
+      todayCheckIn.value,
+    ];
+
+    const metricsAfterTodayDone = calculateHabitMetrics({
+      habit: habit.value,
+      dateKeys,
+      checkIns: checkInsAfterToday,
+      currentDateKey: '2026-08-31',
+    });
+
+    expect(metricsAfterTodayDone.scheduledDays).toBe(3);
+    expect(metricsAfterTodayDone.fullCount).toBe(2);
+    expect(metricsAfterTodayDone.missedCount).toBe(1);
+    expect(metricsAfterTodayDone.pendingCount).toBe(0);
+    // Evaluated on 3 days: 2 full / 3 days = 67%
+    expect(metricsAfterTodayDone.consistencyRate).toBe(67);
+  });
+
+  it('5. DEFINE SAME-DAY ARCHIVE TRUTH: habit scheduled today, checked in Full, archived later today retains scheduled opportunity and Full evidence in metrics', () => {
+    // Habit created and active today (Aug 31)
+    const habitRes = createHabit({
+      id: 'h_temp',
+      title: 'Temporary Goal',
+      minimumVersion: '1 rep',
+      schedule: { kind: 'daily' },
+      nowIso: '2026-08-31T07:00:00.000Z',
+    });
+    if (!habitRes.ok) throw new Error('Create error');
+
+    // User checks in Full earlier today
+    const checkInRes = createHabitCheckIn({
+      habitId: 'h_temp',
+      date: '2026-08-31',
+      kind: 'full',
+    });
+    if (!checkInRes.ok) throw new Error('Checkin error');
+
+    // User archives the habit later today (e.g. 18:00)
+    const archived = archiveHabit(habitRes.value, '2026-08-31T18:00:00.000Z');
+    if (!archived.ok) throw new Error('Archive error');
+
+    const metrics = calculateHabitMetrics({
+      habit: archived.value,
+      dateKeys: ['2026-08-31'],
+      checkIns: [checkInRes.value],
+      currentDateKey: '2026-08-31',
+    });
+
+    // Today's scheduled opportunity and Full check-in MUST be preserved in metrics!
+    expect(metrics.scheduledDays).toBe(1);
+    expect(metrics.fullCount).toBe(1);
+    expect(metrics.missedCount).toBe(0);
+    expect(metrics.pendingCount).toBe(0);
+    expect(metrics.consistencyRate).toBe(100);
   });
 });

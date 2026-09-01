@@ -1,4 +1,4 @@
-﻿import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
   addHabitToRoutine,
   createRoutine,
@@ -10,12 +10,11 @@ import {
 } from './routine';
 
 describe('routine domain entity', () => {
-  it('creates a routine with trimmed fields and unique habit order', () => {
+  it('creates a routine with trimmed fields and empty habit list', () => {
     const res = createRoutine({
       id: 'routine_morning',
       name: '  Morning Routine  ',
       contextLabel: '  07:00 - Wakeup  ',
-      habitIds: ['habit_1', 'habit_2', 'habit_1'],
       nowIso: '2026-08-31T07:00:00.000Z',
     });
 
@@ -26,7 +25,7 @@ describe('routine domain entity', () => {
       id: 'routine_morning',
       name: 'Morning Routine',
       contextLabel: '07:00 - Wakeup',
-      habitIds: ['habit_1', 'habit_2'],
+      habitIds: [],
       createdAt: '2026-08-31T07:00:00.000Z',
       updatedAt: '2026-08-31T07:00:00.000Z',
     });
@@ -58,54 +57,45 @@ describe('routine domain entity', () => {
     expect(validateRoutinePreWrite(badRoutine).ok).toBe(false);
   });
 
-  it('adds, removes, and reorders habit IDs within a routine', () => {
+  it('adds, removes, and strictly reorders habit IDs within a routine', () => {
     const routineRes = createRoutine({
       id: 'r1',
       name: 'Night Routine',
-      habitIds: ['h1', 'h2'],
       nowIso: '2026-08-31T07:00:00.000Z',
     });
     if (!routineRes.ok) throw new Error('Create failed');
 
-    const withAdded = addHabitToRoutine(routineRes.value, 'h3', '2026-08-31T08:00:00.000Z');
-    expect(withAdded.habitIds).toEqual(['h1', 'h2', 'h3']);
+    const withAdded1 = addHabitToRoutine(routineRes.value, 'h1', '2026-08-31T07:10:00.000Z');
+    const withAdded2 = addHabitToRoutine(withAdded1, 'h2', '2026-08-31T07:20:00.000Z');
+    const withAdded3 = addHabitToRoutine(withAdded2, 'h3', '2026-08-31T08:00:00.000Z');
+    expect(withAdded3.habitIds).toEqual(['h1', 'h2', 'h3']);
 
     // Adding existing habit does not duplicate
-    const noDup = addHabitToRoutine(withAdded, 'h2', '2026-08-31T08:05:00.000Z');
+    const noDup = addHabitToRoutine(withAdded3, 'h2', '2026-08-31T08:05:00.000Z');
     expect(noDup.habitIds).toEqual(['h1', 'h2', 'h3']);
 
-    const reordered = reorderRoutineHabits(withAdded, ['h3', 'h1', 'h2'], '2026-08-31T08:10:00.000Z');
-    expect(reordered.ok).toBe(true);
-    if (!reordered.ok) return;
-    expect(reordered.value.habitIds).toEqual(['h3', 'h1', 'h2']);
+    // Reorder with exact set
+    const reorderedRes = reorderRoutineHabits(withAdded3, ['h3', 'h1', 'h2'], '2026-08-31T08:10:00.000Z');
+    expect(reorderedRes.ok).toBe(true);
+    if (!reorderedRes.ok) throw new Error('Reorder failed');
+    expect(reorderedRes.value.habitIds).toEqual(['h3', 'h1', 'h2']);
 
-    const removed = removeHabitFromRoutine(reordered.value, 'h1', '2026-08-31T08:15:00.000Z');
+    // Reorder with duplicates is rejected
+    const dupReorder = reorderRoutineHabits(withAdded3, ['h3', 'h3', 'h1'], '2026-08-31T08:10:00.000Z');
+    expect(dupReorder.ok).toBe(false);
+
+    // Reorder with unknown/extra or missing IDs is rejected
+    const unknownReorder = reorderRoutineHabits(withAdded3, ['h3', 'h1', 'unknown'], '2026-08-31T08:10:00.000Z');
+    expect(unknownReorder.ok).toBe(false);
+
+    const removed = removeHabitFromRoutine(reorderedRes.value, 'h1', '2026-08-31T08:15:00.000Z');
     expect(removed.habitIds).toEqual(['h3', 'h2']);
   });
 
-  it('rejects reorder duplicates and membership-set changes', () => {
-    const routineRes = createRoutine({
-      id: 'r1',
-      name: 'Night Routine',
-      habitIds: ['h1', 'h2'],
-      nowIso: '2026-08-31T07:00:00.000Z',
-    });
-    if (!routineRes.ok) throw new Error('Create failed');
-
-    const dup = reorderRoutineHabits(routineRes.value, ['h1', 'h1']);
-    expect(dup.ok).toBe(false);
-    if (!dup.ok) expect(dup.code).toBe('duplicate_habit_ids');
-
-    const extra = reorderRoutineHabits(routineRes.value, ['h1', 'h2', 'h3']);
-    expect(extra.ok).toBe(false);
-    if (!extra.ok) expect(extra.code).toBe('invalid_reorder');
-  });
-
-  it('updates name and contextLabel without mutating membership', () => {
+  it('updates name and contextLabel correctly', () => {
     const routineRes = createRoutine({
       id: 'r1',
       name: 'Afternoon Reset',
-      habitIds: ['h1'],
       nowIso: '2026-08-31T07:00:00.000Z',
     });
     if (!routineRes.ok) throw new Error('Create failed');
@@ -121,7 +111,6 @@ describe('routine domain entity', () => {
 
     expect(updated.value.name).toBe('After School Reset');
     expect(updated.value.contextLabel).toBe('16:30');
-    expect(updated.value.habitIds).toEqual(['h1']);
     expect(updated.value.updatedAt).toBe('2026-08-31T08:00:00.000Z');
   });
 });

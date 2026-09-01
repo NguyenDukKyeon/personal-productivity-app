@@ -1,4 +1,4 @@
-﻿import { err, ok, type Result } from '../shared/result';
+import { err, ok, type Result } from '../shared/result';
 
 export interface Routine {
   id: string;
@@ -13,7 +13,6 @@ export interface CreateRoutineDomainInput {
   id: string;
   name: string;
   contextLabel?: string;
-  habitIds?: string[];
   nowIso?: string;
 }
 
@@ -29,20 +28,6 @@ function isValidIsoString(val: string): boolean {
   if (typeof val !== 'string' || !val) return false;
   const d = new Date(val);
   return !Number.isNaN(d.getTime()) && val.includes('T');
-}
-
-function deduplicateHabitIds(ids?: string[]): string[] {
-  if (!Array.isArray(ids)) return [];
-  const set = new Set<string>();
-  const result: string[] = [];
-  for (const item of ids) {
-    const trimmed = typeof item === 'string' ? item.trim() : '';
-    if (trimmed && !set.has(trimmed)) {
-      set.add(trimmed);
-      result.push(trimmed);
-    }
-  }
-  return result;
 }
 
 export function validateRoutinePreWrite(routine: Routine): Result<void> {
@@ -105,14 +90,13 @@ export function createRoutine(
       `Context label cannot exceed ${MAX_CONTEXT_LABEL_LENGTH} characters.`,
     );
 
-  const habitIds = deduplicateHabitIds(input.habitIds);
   const now = input.nowIso ?? new Date().toISOString();
 
   const routine: Routine = {
     id,
     name,
     contextLabel,
-    habitIds,
+    habitIds: [],
     createdAt: now,
     updatedAt: now,
   };
@@ -201,35 +185,37 @@ export function reorderRoutineHabits(
   orderedHabitIds: string[],
   nowIso?: string,
 ): Result<Routine> {
-  const seen = new Set<string>();
-  const nextIds: string[] = [];
-  for (const raw of orderedHabitIds) {
-    const trimmed = raw.trim();
-    if (!trimmed) {
-      return err('invalid_habit_id', 'Reorder habit IDs must be non-empty strings.');
-    }
-    if (seen.has(trimmed)) {
-      return err('duplicate_habit_ids', 'Reorder cannot contain duplicate habit IDs.');
-    }
-    seen.add(trimmed);
-    nextIds.push(trimmed);
+  if (!Array.isArray(orderedHabitIds)) {
+    return err('invalid_habit_ids', 'Ordered habit IDs must be an array.');
+  }
+  const trimmedIds = orderedHabitIds.map((id) => (typeof id === 'string' ? id.trim() : ''));
+  const uniqueSet = new Set(trimmedIds);
+  if (uniqueSet.size !== trimmedIds.length) {
+    return err('duplicate_habit_ids', 'Reorder list contains duplicate habit IDs.');
   }
 
   const currentSet = new Set(routine.habitIds);
-  if (currentSet.size !== nextIds.length || nextIds.some((id) => !currentSet.has(id))) {
+  if (
+    trimmedIds.length !== routine.habitIds.length ||
+    !trimmedIds.every((id) => currentSet.has(id))
+  ) {
     return err(
-      'invalid_reorder',
-      'Reorder must preserve the current membership set; it only changes order.',
+      'invalid_reorder_set',
+      'Reorder must preserve the exact existing routine membership set.',
     );
   }
 
   const now = nowIso ?? new Date().toISOString();
   const updated: Routine = {
     ...routine,
-    habitIds: nextIds,
+    habitIds: trimmedIds,
     updatedAt: now,
   };
+
   const validation = validateRoutinePreWrite(updated);
-  if (!validation.ok) return validation;
+  if (!validation.ok) {
+    return validation;
+  }
+
   return ok(updated);
 }

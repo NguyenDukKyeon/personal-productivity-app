@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useState } from 'react';
 import { ChevronDown, ChevronUp, Layers, Trash2 } from 'lucide-react';
@@ -17,7 +17,7 @@ interface RoutineSectionProps {
   onArchiveHabit: (habitId: string) => void;
   onViewHistory: (habit: Habit) => void;
   onDeleteRoutine: (routineId: string) => void;
-  onMoveHabit: (habitId: string, direction: 'up' | 'down') => void;
+  onReorderRoutine?: (routineId: string, habitIds: string[]) => void;
 }
 
 export function RoutineSection({
@@ -29,7 +29,7 @@ export function RoutineSection({
   onArchiveHabit,
   onViewHistory,
   onDeleteRoutine,
-  onMoveHabit,
+  onReorderRoutine,
 }: RoutineSectionProps) {
   const [collapsed, setCollapsed] = useState(false);
 
@@ -83,29 +83,41 @@ export function RoutineSection({
               No habits in this routine yet. Edit a habit to assign it here.
             </p>
           ) : (
-            items.map((item, index) => (
-              <div key={item.habit.id} className="flex items-start gap-2">
-                <div className="flex flex-col pt-3">
-                  <button
-                    type="button"
-                    className="rounded-md p-1 text-slate-400 hover:bg-slate-200/70 hover:text-slate-700 disabled:opacity-30 dark:hover:bg-[#1e2538] dark:hover:text-slate-200"
-                    onClick={() => onMoveHabit(item.habit.id, 'up')}
-                    disabled={index === 0}
-                    aria-label={`Move ${item.habit.title} up`}
-                  >
-                    <ChevronUp className="h-4 w-4" />
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded-md p-1 text-slate-400 hover:bg-slate-200/70 hover:text-slate-700 disabled:opacity-30 dark:hover:bg-[#1e2538] dark:hover:text-slate-200"
-                    onClick={() => onMoveHabit(item.habit.id, 'down')}
-                    disabled={index === items.length - 1}
-                    aria-label={`Move ${item.habit.title} down`}
-                  >
-                    <ChevronDown className="h-4 w-4" />
-                  </button>
-                </div>
-                <div className="min-w-0 flex-1">
+            items.map((item, idx) => (
+              <div key={item.habit.id} data-testid={`routine-item-${item.habit.title}`} className="flex items-center gap-2">
+                {onReorderRoutine && items.length > 1 && (
+                  <div className="flex flex-col gap-1">
+                    <button
+                      type="button"
+                      disabled={idx === 0}
+                      className="rounded p-1 text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 disabled:opacity-30"
+                      onClick={() => {
+                        const newIds = [...items.map((i) => i.habit.id)];
+                        [newIds[idx - 1], newIds[idx]] = [newIds[idx], newIds[idx - 1]];
+                        onReorderRoutine(routine.id, newIds);
+                      }}
+                      title="Move habit up"
+                      aria-label="Move habit up"
+                    >
+                      <ChevronUp className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={idx === items.length - 1}
+                      className="rounded p-1 text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 disabled:opacity-30"
+                      onClick={() => {
+                        const newIds = [...items.map((i) => i.habit.id)];
+                        [newIds[idx + 1], newIds[idx]] = [newIds[idx], newIds[idx + 1]];
+                        onReorderRoutine(routine.id, newIds);
+                      }}
+                      title="Move habit down"
+                      aria-label="Move habit down"
+                    >
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                )}
+                <div className="flex-1">
                   <HabitTodayCard
                     item={item}
                     onCheckIn={onCheckIn}

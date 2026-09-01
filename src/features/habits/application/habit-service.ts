@@ -1,4 +1,4 @@
-﻿import {
+import {
   archiveHabit,
   createHabit,
   isHabitActiveOnDate,
@@ -356,7 +356,7 @@ export function createHabitService(deps: {
       const habit = habitRes.value;
 
       // 3. Reject inactive / outside lifecycle habit
-      if (!isHabitActiveOnDate(habit, input.date)) {
+      if (habit.status !== 'active' || !isHabitActiveOnDate(habit, input.date)) {
         return err('habit_inactive', `Habit is not active on ${input.date}.`);
       }
 

@@ -1,4 +1,4 @@
-﻿import { toLocalDateKey } from '../shared/local-date';
+import { toLocalDateKey } from '../shared/local-date';
 import { isHabitScheduledOnDate, type Habit } from './habit';
 import type { HabitCheckIn } from './habit-check-in';
 import { deriveHabitRecoveryState } from './habit-recovery';
@@ -10,35 +10,31 @@ export interface HabitMetrics {
   skippedCount: number;
   missedCount: number;
   pendingCount: number;
-  consistencyRate: number; // 0..100 percent of completed historical scheduled days
+  consistencyRate: number; // 0..100 percent
   recoveriesCompleted: number;
 }
 
-/**
- * Historical consistency distinguishes pending from missed:
- * - past scheduled date + no check-in = missed
- * - current asOfDateKey + no check-in = pending (not in the historical
- *   completed denominator — a 14-day rate at 08:00 must not punish today)
- * - after today's completion, today enters the denominator correctly
- */
 export function calculateHabitMetrics({
   habit,
   dateKeys,
   checkIns,
-  asOfDateKey,
+  currentDateKey,
 }: {
   habit: Habit;
   dateKeys: string[];
   checkIns: HabitCheckIn[];
-  asOfDateKey?: string;
+  currentDateKey?: string;
 }): HabitMetrics {
-  const asOf = asOfDateKey ?? toLocalDateKey(new Date());
   const checkInMap = new Map<string, HabitCheckIn>();
   for (const c of checkIns) {
     if (c.habitId === habit.id) {
       checkInMap.set(c.date, c);
     }
   }
+
+  const todayKey =
+    currentDateKey ??
+    (dateKeys.length > 0 ? dateKeys[dateKeys.length - 1] : toLocalDateKey(new Date()));
 
   let scheduledDays = 0;
   let fullCount = 0;
@@ -57,10 +53,10 @@ export function calculateHabitMetrics({
     const checkIn = checkInMap.get(dateKey);
 
     if (!checkIn) {
-      if (dateKey < asOf) {
-        missedCount++;
-      } else if (dateKey === asOf) {
+      if (dateKey >= todayKey) {
         pendingCount++;
+      } else {
+        missedCount++;
       }
       continue;
     }
@@ -88,11 +84,11 @@ export function calculateHabitMetrics({
   }
 
   const completedCount = fullCount + minimumCount;
-  const historicalDenominator = scheduledDays - pendingCount;
+  const evaluatedScheduledDays = scheduledDays - pendingCount;
   const consistencyRate =
-    historicalDenominator <= 0
-      ? 0
-      : Math.max(0, Math.min(100, Math.round((completedCount / historicalDenominator) * 100)));
+    evaluatedScheduledDays === 0
+      ? (scheduledDays > 0 ? 100 : 0)
+      : Math.max(0, Math.min(100, Math.round((completedCount / evaluatedScheduledDays) * 100)));
 
   return {
     scheduledDays,

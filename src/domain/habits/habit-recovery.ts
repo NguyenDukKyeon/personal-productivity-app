@@ -1,4 +1,4 @@
-import { shiftLocalDateKey } from '../shared/local-date';
+﻿import { parseLocalDateKey, toLocalDateKey } from '../shared/local-date';
 import { isHabitScheduledOnDate, type Habit } from './habit';
 import type { HabitCheckIn } from './habit-check-in';
 
@@ -6,6 +6,13 @@ export interface HabitRecoveryState {
   isRecovery: boolean;
   lastScheduledDate: string | null;
   lastCheckIn: HabitCheckIn | null;
+}
+
+function shiftLocalDateKey(dateKey: string, offsetDays: number): string | null {
+  const parts = parseLocalDateKey(dateKey);
+  if (!parts) return null;
+  const utc = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + offsetDays));
+  return toLocalDateKey(new Date(utc.getUTCFullYear(), utc.getUTCMonth(), utc.getUTCDate()));
 }
 
 export function deriveHabitRecoveryState({

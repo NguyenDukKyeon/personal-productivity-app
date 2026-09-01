@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useState } from 'react';
 import { Archive, Check, History, MoreVertical, Pencil, RotateCcw, Sparkles } from 'lucide-react';
@@ -86,6 +86,7 @@ export function HabitTodayCard({
 
   return (
     <Card
+      data-testid={`habit-card-${habit.title}`}
       className={cn(
         'relative flex flex-col gap-3 transition-all',
         checkIn?.kind === 'full' && 'border-emerald-200 bg-emerald-50/40 dark:border-emerald-950 dark:bg-emerald-950/20',
