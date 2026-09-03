@@ -1,4 +1,4 @@
-﻿import type { IDBPDatabase } from 'idb';
+import type { IDBPDatabase } from 'idb';
 import { z } from 'zod';
 import { validateCapacityMinutes } from '@/domain/capacity/capacity';
 import type { DailyPlan } from '@/domain/daily-plans/daily-plan';
@@ -34,21 +34,6 @@ const timeBlockSchema = z.object({
   habitId: z.string().nullable(),
   startMinute: z.number().int(),
   endMinute: z.number().int(),
-  createdAt: z.string(),
-  updatedAt: z.string(),
-});
-
-const workItemSchema = z.object({
-  id: z.string(),
-  projectId: z.string().nullable(),
-  title: z.string(),
-  notes: z.string(),
-  type: z.enum(['task', 'lesson', 'milestone']),
-  estimatedMinutes: z.number().int(),
-  actualMinutes: z.number().int(),
-  priority: z.enum(['p1_urgent', 'p2_high', 'p3_medium', 'p4_low']),
-  status: z.enum(['backlog', 'scheduled', 'in_progress', 'completed']),
-  completedAt: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

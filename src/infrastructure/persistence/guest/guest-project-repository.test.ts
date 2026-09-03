@@ -1,4 +1,4 @@
-﻿import { openDB } from 'idb';
+import { openDB } from 'idb';
 import { describe, expect, it } from 'vitest';
 import type { DailyCommitmentSnapshot } from '@/domain/commitments/commitment';
 import type { DailyPlan, DailyPriority } from '@/domain/daily-plans/daily-plan';
@@ -11,7 +11,7 @@ import type { Project } from '@/domain/projects/project';
 import type { ProjectMilestone } from '@/domain/projects/project-milestone';
 import type { TimeBlock } from '@/domain/time-blocks/time-block';
 import type { WorkItem } from '@/domain/work-items/work-item';
-import { GUEST_DB_VERSION, type GuestTodayDB } from './guest-db';
+import { GUEST_DB_VERSION } from './guest-db';
 import { createGuestFocusRepository } from './guest-focus-repository';
 import { createGuestHabitRepository } from './guest-habit-repository';
 import { createGuestProjectRepository } from './guest-project-repository';

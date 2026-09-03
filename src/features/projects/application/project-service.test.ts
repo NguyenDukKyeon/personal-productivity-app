@@ -1,4 +1,5 @@
-﻿import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
+import type { WorkItem } from '@/domain/work-items/work-item';
 import { createGuestPlannerRepository } from '@/infrastructure/persistence/guest/guest-planner-repository';
 import { createGuestProjectRepository } from '@/infrastructure/persistence/guest/guest-project-repository';
 import { createGuestTodayRepository } from '@/infrastructure/persistence/guest/guest-today-repository';
@@ -59,7 +60,7 @@ describe('ProjectService application service', () => {
   });
 
   it('aggregates project detail with milestones, work items, progress, and forecast', async () => {
-    const { service, todayRepo, plannerRepo } = await createTestService(dbName());
+    const { service } = await createTestService(dbName());
 
     const created = await service.createProject({
       title: 'Math Calculus',

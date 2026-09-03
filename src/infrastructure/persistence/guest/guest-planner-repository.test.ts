@@ -1,13 +1,8 @@
-﻿import { openDB } from 'idb';
 import { describe, expect, it } from 'vitest';
 import type { DailyPlan } from '@/domain/daily-plans/daily-plan';
 import type { TimeBlock } from '@/domain/time-blocks/time-block';
 import type { WorkItem } from '@/domain/work-items/work-item';
-import { GUEST_DB_VERSION, type GuestTodayDB } from './guest-db';
-import {
-  createGuestPlannerRepository,
-  GuestPlannerRepository,
-} from './guest-planner-repository';
+import { createGuestPlannerRepository } from './guest-planner-repository';
 import { createGuestTodayRepository } from './guest-today-repository';
 
 function dbName(): string {

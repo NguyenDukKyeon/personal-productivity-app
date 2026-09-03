@@ -1,7 +1,6 @@
-﻿'use client';
+'use client';
 
-import { Calendar, FolderGit2, Plus, RefreshCw, Undo2 } from 'lucide-react';
-import type { Project } from '@/domain/projects/project';
+import { Calendar, FolderGit2, Plus, Undo2 } from 'lucide-react';
 import type { ProjectService } from '../application/project-service';
 import { useProjectController } from '../hooks/useProjectController';
 import { ProjectDetail } from './ProjectDetail';
@@ -25,7 +24,6 @@ export function ProjectsScreen({ service }: ProjectsScreenProps) {
     setIsProjectModalOpen,
     editingProject,
     setEditingProject,
-    loadProjects,
     handleCreateProject,
     handleUpdateProject,
     handleArchiveProject,

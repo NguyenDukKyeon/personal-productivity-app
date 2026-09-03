@@ -1,4 +1,4 @@
-﻿import { validateCapacityMinutes } from '@/domain/capacity/capacity';
+import { validateCapacityMinutes } from '@/domain/capacity/capacity';
 import type { DailyPlan } from '@/domain/daily-plans/daily-plan';
 import {
   buildPlannerView,
@@ -6,7 +6,7 @@ import {
   type PlannerView,
 } from '@/domain/planner/planner-day';
 import type { Project } from '@/domain/projects/project';
-import { parseLocalDateKey, shiftLocalDateKey, toLocalDateKey } from '@/domain/shared/local-date';
+import { parseLocalDateKey, shiftLocalDateKey } from '@/domain/shared/local-date';
 import { err, ok, type Result } from '@/domain/shared/result';
 import { validateTimeBlock, type TimeBlock } from '@/domain/time-blocks/time-block';
 import type { WorkItem } from '@/domain/work-items/work-item';

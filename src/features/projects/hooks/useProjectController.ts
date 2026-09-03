@@ -1,7 +1,6 @@
-﻿import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { Project } from '@/domain/projects/project';
-import type { ProjectMilestone } from '@/domain/projects/project-milestone';
-import type { WorkItem, WorkItemPriority, WorkItemType } from '@/domain/work-items/work-item';
+import type { WorkItemPriority, WorkItemType } from '@/domain/work-items/work-item';
 import type { ProjectDetail, ProjectService } from '../application/project-service';
 
 export function useProjectController(service: ProjectService) {

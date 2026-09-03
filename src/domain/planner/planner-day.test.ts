@@ -1,4 +1,4 @@
-﻿import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import type { DailyPlan } from '@/domain/daily-plans/daily-plan';
 import type { TimeBlock } from '@/domain/time-blocks/time-block';
 import type { WorkItem } from '@/domain/work-items/work-item';
@@ -6,7 +6,6 @@ import {
   buildPlannerDay,
   buildPlannerView,
   validateWorkItemTimeBlockOverlap,
-  type PlannerDayView,
 } from './planner-day';
 
 describe('Planner Day and 7-day View domain logic', () => {

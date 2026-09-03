@@ -1,5 +1,4 @@
-﻿import { describe, expect, it } from 'vitest';
-import type { TimeBlock } from '@/domain/time-blocks/time-block';
+import { describe, expect, it } from 'vitest';
 import type { WorkItem } from '@/domain/work-items/work-item';
 import { createGuestPlannerRepository } from '@/infrastructure/persistence/guest/guest-planner-repository';
 import { createGuestProjectRepository } from '@/infrastructure/persistence/guest/guest-project-repository';

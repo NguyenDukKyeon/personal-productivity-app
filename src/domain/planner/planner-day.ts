@@ -1,10 +1,16 @@
-﻿import { parseLocalDateKey, shiftLocalDateKey, toLocalDateKey } from '@/domain/shared/local-date';
+import { parseLocalDateKey, shiftLocalDateKey } from '@/domain/shared/local-date';
 import { err, ok, type Result } from '@/domain/shared/result';
 import type { TimeBlock } from '@/domain/time-blocks/time-block';
 import type { DailyPlan } from '@/domain/daily-plans/daily-plan';
 import type { WorkItem } from '@/domain/work-items/work-item';
 
 export const DEFAULT_DAILY_CAPACITY_MINUTES = 480; // 8 hours
+
+export interface PlannerScheduledBlock {
+  timeBlock: TimeBlock;
+  workItem: WorkItem | null;
+  durationMinutes: number;
+}
 
 export interface PlannerDayView {
   date: string;
@@ -16,10 +22,17 @@ export interface PlannerDayView {
   overbookedMinutes: number;
   isOverbooked: boolean;
   timeBlocks: TimeBlock[];
+  dailyPlan?: DailyPlan | null;
+  freeCapacityMinutes?: number;
+  isOverCapacity?: boolean;
+  scheduledBlocks?: PlannerScheduledBlock[];
 }
+
+export type PlannerDay = PlannerDayView;
 
 export interface PlannerView {
   startDate: string;
+  daysCount?: number;
   days: PlannerDayView[];
   backlogItems: WorkItem[];
 }
@@ -69,7 +82,8 @@ export function buildPlannerDay(params: {
 }
 
 export function validateWorkItemTimeBlockOverlap(params: {
-  candidate: Pick<TimeBlock, 'id' | 'date' | 'startMinute' | 'endMinute' | 'workItemId'>;
+  candidate: Pick<TimeBlock, 'id' | 'date' | 'startMinute' | 'endMinute'> &
+    Partial<Pick<TimeBlock, 'workItemId' | 'habitId'>>;
   existingBlocks: TimeBlock[];
 }): Result<void> {
   const sameDateBlocks = params.existingBlocks.filter(
@@ -101,6 +115,7 @@ export function buildPlannerView(params: {
 }): PlannerView {
   const daysCount = params.daysCount ?? 7;
   const plansByDate = new Map(params.dailyPlans.map((p) => [p.date, p]));
+  const workItemsMap = new Map(params.workItems.map((w) => [w.id, w]));
   const days: PlannerDayView[] = [];
 
   for (let i = 0; i < daysCount; i++) {
@@ -108,14 +123,26 @@ export function buildPlannerView(params: {
     if (!date) continue;
 
     const dailyPlan = plansByDate.get(date) ?? null;
-    days.push(
-      buildPlannerDay({
-        date,
-        dailyPlan,
-        timeBlocks: params.timeBlocks,
-        defaultCapacityMinutes: params.defaultCapacityMinutes,
-      }),
-    );
+    const day = buildPlannerDay({
+      date,
+      dailyPlan,
+      timeBlocks: params.timeBlocks,
+      defaultCapacityMinutes: params.defaultCapacityMinutes,
+    });
+
+    const scheduledBlocks: PlannerScheduledBlock[] = day.timeBlocks.map((b) => ({
+      timeBlock: b,
+      workItem: b.workItemId ? (workItemsMap.get(b.workItemId) ?? null) : null,
+      durationMinutes: b.endMinute - b.startMinute,
+    }));
+
+    days.push({
+      ...day,
+      dailyPlan,
+      freeCapacityMinutes: day.remainingMinutes,
+      isOverCapacity: day.isOverbooked,
+      scheduledBlocks,
+    });
   }
 
   // Backlog items are uncompleted items that have no upcoming TimeBlocks
@@ -132,6 +159,7 @@ export function buildPlannerView(params: {
 
   return {
     startDate: params.startDate,
+    daysCount,
     days,
     backlogItems,
   };
