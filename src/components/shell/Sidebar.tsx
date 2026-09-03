@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -13,8 +13,6 @@ import {
 import { cn } from '@/lib/utils';
 
 const laterItems = [
-  { name: 'Planner', icon: CalendarDays },
-  { name: 'Projects', icon: FolderGit2 },
   { name: 'Review', icon: BarChart3 },
 ] as const;
 
@@ -53,6 +51,8 @@ export function Sidebar({ className }: { className?: string }) {
   const todayActive = pathname === '/today' || pathname === '/';
   const focusActive = pathname === '/focus' || pathname.startsWith('/focus');
   const habitsActive = pathname === '/habits' || pathname.startsWith('/habits');
+  const plannerActive = pathname === '/planner' || pathname.startsWith('/planner');
+  const projectsActive = pathname === '/projects' || pathname.startsWith('/projects');
 
   return (
     <aside
@@ -84,6 +84,12 @@ export function Sidebar({ className }: { className?: string }) {
         <NavLink href="/habits" active={habitsActive} icon={CheckCircle2}>
           Habits
         </NavLink>
+        <NavLink href="/planner" active={plannerActive} icon={CalendarDays}>
+          Planner
+        </NavLink>
+        <NavLink href="/projects" active={projectsActive} icon={FolderGit2}>
+          Projects
+        </NavLink>
 
         {laterItems.map((item) => {
           const Icon = item.icon;
@@ -98,12 +104,17 @@ export function Sidebar({ className }: { className?: string }) {
                 {item.name}
               </span>
               <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:bg-[#161b26]">
-                Later
+                Phase 5
               </span>
             </div>
           );
         })}
       </nav>
+
+      <div className="border-t border-slate-200 p-4 text-[11px] text-slate-400 dark:border-[#1e2538]">
+        <p className="font-semibold text-slate-600 dark:text-slate-300">Phase 4 Active</p>
+        <p>Guest Mode · Local Persistence</p>
+      </div>
     </aside>
   );
 }

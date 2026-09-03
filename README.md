@@ -1,9 +1,10 @@
-﻿# Smart Planner Reborn — Foundation + Today + Focus Station + Habits & Routines
+# Smart Planner Reborn — Foundation + Today + Focus Station + Habits & Routines + Projects & Flexible Planner
 
-Guest-only **Today workstation**, **Focus Station**, and **Habits & Routines** workstation for a high-discipline personal productivity rebuild. This repository implements three vertical slices:
+Guest-only **Today workstation**, **Focus Station**, **Habits & Routines**, **Projects & Roadmaps**, and **Flexible Planner** workstation for a high-discipline personal productivity rebuild. This repository implements four vertical slices:
 1. Plan one local day and commit that plan with divergence tracking (`/today`).
 2. Turn scheduled work into truthful focus execution evidence (`/focus`).
 3. Build repeatable consistency with low-friction habits, minimum viable versions, and fast recovery (`/habits`).
+4. Define outcomes, milestones, and multi-day schedules with deterministic forecast simulation (`/projects`, `/planner`).
 
 It is not the full Smart Planner product yet.
 
@@ -31,25 +32,38 @@ It is not the full Smart Planner product yet.
 - **Effective-Dated Lifecycle & History**: Active lifecycle intervals (`activeIntervals`) and schedule revisions (`scheduleRevisions`) prevent false historical misses for dates before creation or during archive intervals
 - **Routines**: Group habits into named daily contexts (e.g. "Morning Startup", "Night Reset") with single-source canonical membership (`Routine.habitIds`)
 
-### Safe Guest Persistence
-- **IndexedDB persistence** (`GuestHabitRepository`, `GuestTodayRepository`, `GuestFocusRepository`) that validates schemas pre-write and pre-read, refusing to silently repair or drop corrupt data (`err('corrupt_record', ...)`).
+### Projects & Roadmaps (`/projects`)
+- **Outcome Management**: Active, archived, and completed lifecycle states with target completion dates
+- **Milestone Sequencing**: Ordered milestones representing the project's roadmap
+- **WorkItem Project Association**: Connect tasks to projects with strict referential validation
+- **Schedule Forecasting**: Deterministic, read-only simulation projecting completion dates from remaining estimated work and future daily capacity without auto-planning or hidden writes
 
-Reload preserves all saved plans, focus sessions, habits, routines, and check-in history.
+### Flexible Planner (`/planner`)
+- **7-Day Rolling View**: Dynamic multi-day planning horizon showing per-day capacity and scheduled allocations
+- **Unscheduled Backlog**: Automatically derives unplaced work items with project filter
+- **Explicit Scheduling & Move**: Place tasks into time blocks with exact date/start/end times; moving preserves singular identity without duplicate creation
+- **Factual Overbooking**: Highlights days exceeding planned capacity without destructive auto-rescheduling
+- **Overlap Prohibition**: Enforces non-overlapping TimeBlocks at domain and persistence boundaries
+
+### Safe Guest Persistence
+- **IndexedDB v4 persistence** (`GuestProjectRepository`, `GuestPlannerRepository`, `GuestHabitRepository`, `GuestTodayRepository`, `GuestFocusRepository`) that validates schemas pre-write and pre-read, refusing to silently repair or drop corrupt data (`err('corrupt_record', ...)`). Seamless schema migration from v1/v2/v3 preserving all existing records.
+
+Reload preserves all saved plans, focus sessions, habits, routines, projects, milestones, and multi-day time blocks.
 
 ## What is not yet implemented
 
 These remain roadmap inheritances and are not available in this slice:
 
+- Drag and drop time block rearrangement
+- External calendar integrations (Google, Outlook, iCal)
 - Focus preferences, auto-break, ambient audio, mini/studio timer, notifications
-- Multi-day Flexible Planner
-- Projects / Roadmaps / lesson placement
 - Weekly Review / analytics
 - AI Coach
 - PWA / reminders / Web Push
 - Backup, import/export, and legacy Smart Planner migration
 - Natural-language capture, command palette, spaced repetition, confetti
 
-Sidebar entries for Planner, Projects, and Review are placeholders.
+Sidebar entry for Review is a placeholder.
 
 ## Stack
 
@@ -72,7 +86,7 @@ npm run build
 npm run e2e
 ```
 
-The app is accessible at `http://localhost:3000/today`, `http://localhost:3000/focus`, and `http://localhost:3000/habits`.
+The app is accessible at `http://localhost:3000/today`, `http://localhost:3000/focus`, `http://localhost:3000/habits`, `http://localhost:3000/projects`, and `http://localhost:3000/planner`.
 
 ## License
 
