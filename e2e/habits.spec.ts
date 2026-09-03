@@ -82,7 +82,7 @@ test.describe('Habits & Routines Acceptance Journeys', () => {
     // 2. Adjust creation date & lifecycle to 2 local calendar days ago so yesterday counts as a missed occurrence
     await page.evaluate(async () => {
       const db = await new Promise<IDBDatabase>((resolve, reject) => {
-        const req = indexedDB.open('personal-productivity-guest', 3);
+        const req = indexedDB.open('personal-productivity-guest');
         req.onsuccess = () => resolve(req.result);
         req.onerror = () => reject(req.error);
       });
